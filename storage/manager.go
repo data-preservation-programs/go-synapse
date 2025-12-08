@@ -281,6 +281,6 @@ func CalculatePieceCID(data []byte) (cid.Cid, error) {
 
 func randomBigInt() *big.Int {
 	b := make([]byte, 32)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return new(big.Int).SetBytes(b)
 }

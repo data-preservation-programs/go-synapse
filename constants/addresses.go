@@ -54,8 +54,8 @@ var RPCURLs = map[Network]string{
 }
 
 var GenesisTimestamps = map[Network]int64{
-	NetworkMainnet:     1598306400, // August 24, 2020 22:00:00 UTC
-	NetworkCalibration: 1667326380, // November 1, 2022 18:13:00 UTC
+	NetworkMainnet:     1598306400,
+	NetworkCalibration: 1667326380,
 }
 
 var GenesisTimestampsByChainID = map[int64]int64{

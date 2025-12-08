@@ -25,7 +25,7 @@ type PDPOffering struct {
 }
 
 type ServiceProduct struct {
-	Type         string // "PDP"
+	Type         string
 	IsActive     bool
 	Capabilities map[string][]byte
 	Data         *PDPOffering
@@ -38,7 +38,7 @@ type ProviderInfo struct {
 	Name            string
 	Description     string
 	Active          bool
-	Products        map[string]*ServiceProduct // keyed by product type ("PDP")
+	Products        map[string]*ServiceProduct
 }
 
 type ProviderRegistrationInfo struct {
@@ -46,7 +46,7 @@ type ProviderRegistrationInfo struct {
 	Name         string
 	Description  string
 	PDPOffering  PDPOffering
-	Capabilities map[string]string // additional key-value pairs
+	Capabilities map[string]string
 }
 
 type PDPServiceInfo struct {

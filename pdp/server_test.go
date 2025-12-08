@@ -150,7 +150,7 @@ func TestServer_CreateDataSet(t *testing.T) {
 	t.Run("server error", func(t *testing.T) {
 		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Internal server error"))
+			_, _ = w.Write([]byte("Internal server error"))
 		}))
 
 		_, err := server.CreateDataSet(
@@ -175,7 +175,7 @@ func TestServer_GetDataSetCreationStatus(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{
+			_, _ = w.Write([]byte(`{
 				"createMessageHash": "` + txHash + `",
 				"dataSetCreated": true,
 				"txStatus": "confirmed",
@@ -218,7 +218,7 @@ func TestServer_GetDataSet(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{
+			_, _ = w.Write([]byte(`{
 				"id": 123,
 				"pieces": [],
 				"nextChallengeEpoch": 1500

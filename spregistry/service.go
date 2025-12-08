@@ -90,7 +90,7 @@ func (s *Service) GetAllActiveProviders(ctx context.Context) ([]*ProviderInfo, e
 			for _, id := range providerIDs {
 				provider, err := s.GetProvider(ctx, int(id.Int64()))
 				if err != nil {
-					continue // Skip on error
+					continue
 				}
 				if provider != nil {
 					allProviders = append(allProviders, provider)
@@ -116,7 +116,7 @@ func (s *Service) GetProviders(ctx context.Context, providerIDs []int) ([]*Provi
 	for _, id := range providerIDs {
 		provider, err := s.GetProvider(ctx, id)
 		if err != nil {
-			continue // Skip on error
+			continue
 		}
 		if provider != nil {
 			providers = append(providers, provider)

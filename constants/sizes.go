@@ -6,7 +6,7 @@ const (
 	GiB = 1 << 30
 	TiB = 1 << 40
 
-	MaxUploadSize = GiB * 127 / 128 // 1,065,353,216 bytes
+	MaxUploadSize = GiB * 127 / 128
 
 	MinUploadSize = 127
 )

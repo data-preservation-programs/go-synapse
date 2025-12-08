@@ -16,18 +16,18 @@ const (
 )
 
 const (
-	TransactionPropagationTimeoutMS = 180000 // 3 minutes
+	TransactionPropagationTimeoutMS = 180000
 
-	DataSetCreationTimeoutMS = 7 * 60 * 1000 // 7 minutes
+	DataSetCreationTimeoutMS = 7 * 60 * 1000
 
-	PieceParkingTimeoutMS = 7 * 60 * 1000 // 7 minutes
+	PieceParkingTimeoutMS = 7 * 60 * 1000
 
-	PieceAdditionTimeoutMS = 7 * 60 * 1000 // 7 minutes
+	PieceAdditionTimeoutMS = 7 * 60 * 1000
 
-	TransactionPropagationPollIntervalMS = 2000 // 2 seconds
-	DataSetCreationPollIntervalMS        = 2000 // 2 seconds
-	PieceParkingPollIntervalMS           = 5000 // 5 seconds
-	PieceAdditionPollIntervalMS          = 1000 // 1 second
+	TransactionPropagationPollIntervalMS = 2000
+	DataSetCreationPollIntervalMS        = 2000
+	PieceParkingPollIntervalMS           = 5000
+	PieceAdditionPollIntervalMS          = 1000
 )
 
 func CurrentEpoch(chainID int64) *big.Int {

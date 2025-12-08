@@ -349,9 +349,9 @@ func (s *Service) tokenAddress(token Token) common.Address {
 	case TokenUSDFC:
 		return s.usdfcAddress
 	case TokenFIL:
-		return common.Address{} // FIL is native, use zero address
+		return common.Address{}
 	default:
-		return common.HexToAddress(string(token)) // Treat as address
+		return common.HexToAddress(string(token))
 	}
 }
 

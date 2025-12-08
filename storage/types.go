@@ -13,10 +13,9 @@ type UploadResult struct {
 
 type UploadOptions struct {
 	Metadata map[string]string
-	PieceCID cid.Cid // Required for streaming uploads, optional for byte uploads
-	Size     int64   // Required for streaming uploads
+	PieceCID cid.Cid
+	Size     int64  
 }
 
 type DownloadOptions struct {
-	WithCDN bool
 }

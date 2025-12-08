@@ -380,11 +380,11 @@ func (s *Server) WaitForPiece(ctx context.Context, pieceCID cid.Cid, timeout tim
 		err := s.FindPiece(ctx, pieceCID)
 		if err != nil {
 			if strings.Contains(err.Error(), "piece not found") {
-				return false, nil // Keep polling
+				return false, nil
 			}
-			return false, err // Actual error
+			return false, err
 		}
-		return true, nil // Found
+		return true, nil
 	})
 }
 

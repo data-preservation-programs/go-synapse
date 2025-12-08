@@ -13,8 +13,8 @@ const (
 	CapServiceURL       = "serviceURL"
 	CapMinPieceSize     = "minPieceSizeInBytes"
 	CapMaxPieceSize     = "maxPieceSizeInBytes"
-	CapIPNIPiece        = "ipniPiece"        // Optional
-	CapIPNIIPFS         = "ipniIpfs"         // Optional
+	CapIPNIPiece        = "ipniPiece"       
+	CapIPNIIPFS         = "ipniIpfs"        
 	CapStoragePrice     = "storagePricePerTibPerDay"
 	CapMinProvingPeriod = "minProvingPeriodInEpochs"
 	CapLocation         = "location"
