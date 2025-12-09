@@ -38,8 +38,8 @@ var (
 	}
 
 	PaymentsAddresses = map[Network]common.Address{
-		NetworkMainnet:     common.HexToAddress("0xC8C3C94aa8C60E0dFF060D4c3acBa0bC16e4e0ec"),
-		NetworkCalibration: common.HexToAddress("0xD58af75a0F6ed91E8d416CAB72Ebae40E05ecD44"),
+		NetworkMainnet:     common.HexToAddress("0x23b1e018F08BB982348b15a86ee926eEBf7F4DAa"),
+		NetworkCalibration: common.HexToAddress("0x09a0fDc2723fAd1A7b8e3e00eE5DF73841df55a0"),
 	}
 
 	WarmStorageStateViewAddresses = map[Network]common.Address{
