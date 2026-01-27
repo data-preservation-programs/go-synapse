@@ -1,6 +1,7 @@
 package txutil
 
 import (
+	"context"
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
@@ -26,7 +27,8 @@ func TestEstimateGasWithBuffer_InvalidPercent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := EstimateGasWithBuffer(nil, nil, ethereum.CallMsg{}, tt.bufferPercent)
+			ctx := context.Background()
+			_, err := EstimateGasWithBuffer(ctx, nil, ethereum.CallMsg{}, tt.bufferPercent)
 			if tt.shouldError && err == nil {
 				t.Error("EstimateGasWithBuffer() should return error for invalid buffer percent")
 			}
