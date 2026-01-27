@@ -95,7 +95,7 @@ type Manager struct {
 func NewManager(client *ethclient.Client, privateKey *ecdsa.PrivateKey, network constants.Network) (*Manager, error) {
 	contractAddr := constants.GetPDPVerifierAddress(network)
 	if contractAddr == (common.Address{}) {
-		return nil, fmt.Errorf("no PDPVerifier address for network %d", network)
+		return nil, fmt.Errorf("no PDPVerifier address for network %v", network)
 	}
 
 	contract, err := contracts.NewPDPVerifier(contractAddr, client)
