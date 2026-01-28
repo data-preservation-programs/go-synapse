@@ -55,6 +55,24 @@ func (nm *NonceManager) MarkConfirmed(nonce uint64) {
 	delete(nm.pendingTxs, nonce)
 }
 
+// MarkFailed releases a nonce that was never successfully sent to the network.
+// This should be called when a transaction fails before being sent (e.g., gas estimation
+// failure, signing error) to prevent nonce leaks that would block future transactions.
+//
+// IMPORTANT: Only call this for local failures before the transaction is sent.
+// Do NOT call this for network errors after sending - those transactions may still
+// be pending in the mempool and should be tracked until confirmed or replaced.
+func (nm *NonceManager) MarkFailed(nonce uint64) {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+	delete(nm.pendingTxs, nonce)
+
+	// If this was the most recently allocated nonce, roll back
+	if nm.nonce != nil && nonce == *nm.nonce-1 {
+		*nm.nonce--
+	}
+}
+
 // Reset resets the nonce manager (fetches fresh nonce from network)
 func (nm *NonceManager) Reset(ctx context.Context) error {
 	nm.mu.Lock()

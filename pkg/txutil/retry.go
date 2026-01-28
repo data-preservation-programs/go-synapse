@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -107,13 +108,20 @@ func WaitForTransactionWithRetry(ctx context.Context, client *ethclient.Client, 
 	return receipt, nil
 }
 
-// CalculateBackoff calculates exponential backoff with jitter
+// CalculateBackoff calculates exponential backoff with decorrelated jitter.
+// Jitter prevents thundering herd issues when multiple clients retry simultaneously.
+// Uses decorrelated jitter: returns backoff/2 + random(0, backoff/2)
 func CalculateBackoff(attempt int, initialBackoff, maxBackoff time.Duration, multiplier float64) time.Duration {
 	backoff := time.Duration(float64(initialBackoff) * math.Pow(multiplier, float64(attempt)))
 	if backoff > maxBackoff {
 		backoff = maxBackoff
 	}
-	return backoff
+
+	// Apply decorrelated jitter to prevent synchronized retry storms
+	// Returns backoff/2 + random(0, backoff/2)
+	halfBackoff := backoff / 2
+	jitter := time.Duration(rand.Int63n(int64(halfBackoff) + 1))
+	return halfBackoff + jitter
 }
 
 // IsNonceError checks if an error is related to nonce issues

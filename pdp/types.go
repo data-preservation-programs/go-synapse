@@ -111,3 +111,17 @@ type UploadCompleteResponse struct {
 	PieceCID string `json:"pieceCid"`
 	Size     int64  `json:"size"`
 }
+
+// ManagerConfig holds configuration options for the Manager
+type ManagerConfig struct {
+	// GasBufferPercent is the percentage buffer to add to gas estimates (0-100)
+	// For example, 10 means add 10% to the estimated gas limit
+	GasBufferPercent int
+}
+
+// DefaultManagerConfig returns the default configuration for Manager
+func DefaultManagerConfig() ManagerConfig {
+	return ManagerConfig{
+		GasBufferPercent: 10, // Default 10% buffer
+	}
+}

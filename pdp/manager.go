@@ -89,10 +89,25 @@ type Manager struct {
 	contractAddr common.Address
 	chainID     *big.Int
 	nonceManager *txutil.NonceManager
+	config      ManagerConfig
 }
 
-// NewManager creates a new ProofSetManager
+// NewManager creates a new ProofSetManager with default configuration.
+//
+// Deprecated: Use NewManagerWithContext for proper context support or
+// NewManagerWithConfig for custom configuration options.
 func NewManager(client *ethclient.Client, privateKey *ecdsa.PrivateKey, network constants.Network) (*Manager, error) {
+	return NewManagerWithContext(context.Background(), client, privateKey, network)
+}
+
+// NewManagerWithContext creates a new ProofSetManager with context support and default configuration.
+func NewManagerWithContext(ctx context.Context, client *ethclient.Client, privateKey *ecdsa.PrivateKey, network constants.Network) (*Manager, error) {
+	return NewManagerWithConfig(ctx, client, privateKey, network, nil)
+}
+
+// NewManagerWithConfig creates a new ProofSetManager with custom configuration.
+// If config is nil, default configuration will be used.
+func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, privateKey *ecdsa.PrivateKey, network constants.Network, config *ManagerConfig) (*Manager, error) {
 	contractAddr := constants.GetPDPVerifierAddress(network)
 	if contractAddr == (common.Address{}) {
 		return nil, fmt.Errorf("no PDPVerifier address for network %v", network)
@@ -103,9 +118,20 @@ func NewManager(client *ethclient.Client, privateKey *ecdsa.PrivateKey, network 
 		return nil, fmt.Errorf("failed to create contract instance: %w", err)
 	}
 
-	chainID, err := client.ChainID(context.Background())
+	chainID, err := client.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	// Use default config if none provided
+	if config == nil {
+		cfg := DefaultManagerConfig()
+		config = &cfg
+	}
+
+	// Validate configuration
+	if config.GasBufferPercent < 0 || config.GasBufferPercent > 100 {
+		return nil, fmt.Errorf("gas buffer percent must be between 0 and 100, got %d", config.GasBufferPercent)
 	}
 
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
@@ -119,6 +145,7 @@ func NewManager(client *ethclient.Client, privateKey *ecdsa.PrivateKey, network 
 		contractAddr: contractAddr,
 		chainID:      chainID,
 		nonceManager: nonceManager,
+		config:       *config,
 	}, nil
 }
 
@@ -128,6 +155,15 @@ func (m *Manager) CreateProofSet(ctx context.Context, opts CreateProofSetOptions
 	if err != nil {
 		return nil, fmt.Errorf("failed to get nonce: %w", err)
 	}
+
+	// Track whether transaction was actually sent to the network
+	txSent := false
+	defer func() {
+		if !txSent {
+			// Local failure before sending - release nonce immediately
+			m.nonceManager.MarkFailed(nonce)
+		}
+	}()
 
 	auth, err := bind.NewKeyedTransactorWithChainID(m.privateKey, m.chainID)
 	if err != nil {
@@ -146,16 +182,23 @@ func (m *Manager) CreateProofSet(ctx context.Context, opts CreateProofSetOptions
 	if err != nil {
 		return nil, fmt.Errorf("failed to estimate gas for createDataSet: %w", err)
 	}
-	auth.GasLimit = tx.Gas() * 110 / 100 // Add 10% buffer
+	// Apply configurable gas buffer
+	bufferMultiplier := 1.0 + (float64(m.config.GasBufferPercent) / 100.0)
+	auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
 	auth.NoSend = false
+
+	// Mark as sent just before actual send
+	txSent = true
 
 	tx, err = m.contract.CreateDataSet(auth, opts.Listener, opts.ExtraData)
 	if err != nil {
+		// Error after marking sent - don't release nonce, it may be pending
 		return nil, fmt.Errorf("failed to create data set: %w", err)
 	}
 
 	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
 	if err != nil {
+		// Error waiting for receipt - transaction may be pending, don't release nonce
 		return nil, fmt.Errorf("failed to wait for receipt: %w", err)
 	}
 
@@ -238,6 +281,15 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 		return nil, fmt.Errorf("failed to get nonce: %w", err)
 	}
 
+	// Track whether transaction was actually sent to the network
+	txSent := false
+	defer func() {
+		if !txSent {
+			// Local failure before sending - release nonce immediately
+			m.nonceManager.MarkFailed(nonce)
+		}
+	}()
+
 	auth, err := bind.NewKeyedTransactorWithChainID(m.privateKey, m.chainID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transactor: %w", err)
@@ -251,23 +303,30 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 	if err != nil {
 		return nil, fmt.Errorf("failed to estimate gas for addPieces: %w", err)
 	}
-	auth.GasLimit = tx.Gas() * 110 / 100 // Add 10% buffer
+	// Apply configurable gas buffer
+	bufferMultiplier := 1.0 + (float64(m.config.GasBufferPercent) / 100.0)
+	auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
 	auth.NoSend = false
+
+	// Mark as sent just before actual send
+	txSent = true
 
 	tx, err = m.contract.AddPieces(auth, proofSetID, m.address, pieceData, []byte{})
 	if err != nil {
+		// Error after marking sent - don't release nonce, it may be pending
 		return nil, fmt.Errorf("failed to add pieces: %w", err)
 	}
 
 	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
 	if err != nil {
+		// Error waiting for receipt - transaction may be pending, don't release nonce
 		return nil, fmt.Errorf("failed to wait for receipt: %w", err)
 	}
 
 	m.nonceManager.MarkConfirmed(nonce)
 
 	// Extract piece IDs from logs
-	pieceIDs, err := m.extractPieceIDsFromReceipt(receipt, len(roots))
+	pieceIDs, err := m.extractPieceIDsFromReceipt(receipt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract piece IDs: %w", err)
 	}
@@ -317,6 +376,15 @@ func (m *Manager) DeleteProofSet(ctx context.Context, proofSetID *big.Int, extra
 		return fmt.Errorf("failed to get nonce: %w", err)
 	}
 
+	// Track whether transaction was actually sent to the network
+	txSent := false
+	defer func() {
+		if !txSent {
+			// Local failure before sending - release nonce immediately
+			m.nonceManager.MarkFailed(nonce)
+		}
+	}()
+
 	auth, err := bind.NewKeyedTransactorWithChainID(m.privateKey, m.chainID)
 	if err != nil {
 		return fmt.Errorf("failed to create transactor: %w", err)
@@ -324,13 +392,18 @@ func (m *Manager) DeleteProofSet(ctx context.Context, proofSetID *big.Int, extra
 	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Context = ctx
 
+	// Mark as sent just before actual send
+	txSent = true
+
 	tx, err := m.contract.DeleteDataSet(auth, proofSetID, extraData)
 	if err != nil {
+		// Error after marking sent - don't release nonce, it may be pending
 		return fmt.Errorf("failed to delete data set: %w", err)
 	}
 
 	_, err = txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
 	if err != nil {
+		// Error waiting for receipt - transaction may be pending, don't release nonce
 		return fmt.Errorf("failed to wait for receipt: %w", err)
 	}
 
@@ -374,7 +447,7 @@ func (m *Manager) extractProofSetIDFromReceipt(receipt *types.Receipt) (*big.Int
 }
 
 // extractPieceIDsFromReceipt extracts piece IDs from transaction receipt logs
-func (m *Manager) extractPieceIDsFromReceipt(receipt *types.Receipt, expectedCount int) ([]uint64, error) {
+func (m *Manager) extractPieceIDsFromReceipt(receipt *types.Receipt) ([]uint64, error) {
 	for _, log := range receipt.Logs {
 		event, err := m.contract.ParsePiecesAdded(*log)
 		if err == nil && event != nil {

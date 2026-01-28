@@ -164,7 +164,8 @@ func TestCalculateBackoff(t *testing.T) {
 		initialBackoff time.Duration
 		maxBackoff     time.Duration
 		multiplier     float64
-		expected       time.Duration
+		minExpected    time.Duration // With jitter, we get a range
+		maxExpected    time.Duration
 	}{
 		{
 			name:           "first attempt",
@@ -172,7 +173,8 @@ func TestCalculateBackoff(t *testing.T) {
 			initialBackoff: time.Second,
 			maxBackoff:     30 * time.Second,
 			multiplier:     2.0,
-			expected:       time.Second,
+			minExpected:    500 * time.Millisecond, // base/2
+			maxExpected:    time.Second,            // base/2 + base/2
 		},
 		{
 			name:           "second attempt",
@@ -180,7 +182,8 @@ func TestCalculateBackoff(t *testing.T) {
 			initialBackoff: time.Second,
 			maxBackoff:     30 * time.Second,
 			multiplier:     2.0,
-			expected:       2 * time.Second,
+			minExpected:    time.Second,     // 2s/2
+			maxExpected:    2 * time.Second, // 2s/2 + 2s/2
 		},
 		{
 			name:           "third attempt",
@@ -188,7 +191,8 @@ func TestCalculateBackoff(t *testing.T) {
 			initialBackoff: time.Second,
 			maxBackoff:     30 * time.Second,
 			multiplier:     2.0,
-			expected:       4 * time.Second,
+			minExpected:    2 * time.Second, // 4s/2
+			maxExpected:    4 * time.Second, // 4s/2 + 4s/2
 		},
 		{
 			name:           "exceeds max backoff",
@@ -196,15 +200,19 @@ func TestCalculateBackoff(t *testing.T) {
 			initialBackoff: time.Second,
 			maxBackoff:     30 * time.Second,
 			multiplier:     2.0,
-			expected:       30 * time.Second,
+			minExpected:    15 * time.Second, // 30s/2
+			maxExpected:    30 * time.Second, // 30s/2 + 30s/2
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := CalculateBackoff(tt.attempt, tt.initialBackoff, tt.maxBackoff, tt.multiplier)
-			if result != tt.expected {
-				t.Errorf("CalculateBackoff() = %v, want %v", result, tt.expected)
+			// Run multiple times to ensure jitter is working
+			for i := 0; i < 10; i++ {
+				result := CalculateBackoff(tt.attempt, tt.initialBackoff, tt.maxBackoff, tt.multiplier)
+				if result < tt.minExpected || result > tt.maxExpected {
+					t.Errorf("CalculateBackoff() = %v, want between %v and %v", result, tt.minExpected, tt.maxExpected)
+				}
 			}
 		})
 	}
