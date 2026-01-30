@@ -187,14 +187,13 @@ func (m *Manager) CreateProofSet(ctx context.Context, opts CreateProofSetOptions
 	auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
 	auth.NoSend = false
 
-	// Mark as sent just before actual send
-	txSent = true
-
 	tx, err = m.contract.CreateDataSet(auth, opts.Listener, opts.ExtraData)
 	if err != nil {
-		// Error after marking sent - don't release nonce, it may be pending
+		// txSent is still false - defer will call MarkFailed
 		return nil, fmt.Errorf("failed to create data set: %w", err)
 	}
+	// Mark as sent only after successful contract call
+	txSent = true
 
 	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
 	if err != nil {
@@ -268,6 +267,13 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 		return nil, fmt.Errorf("no roots provided")
 	}
 
+	// Get the proof set's listener address
+	proofSet, err := m.GetProofSet(ctx, proofSetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proof set: %w", err)
+	}
+	listenerAddr := proofSet.Listener
+
 	// Convert roots to contract format
 	pieceData := make([]contracts.CidsCid, len(roots))
 	for i, root := range roots {
@@ -299,7 +305,7 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 
 	// Estimate gas
 	auth.NoSend = true
-	tx, err := m.contract.AddPieces(auth, proofSetID, m.address, pieceData, []byte{})
+	tx, err := m.contract.AddPieces(auth, proofSetID, listenerAddr, pieceData, []byte{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to estimate gas for addPieces: %w", err)
 	}
@@ -308,14 +314,13 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 	auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
 	auth.NoSend = false
 
-	// Mark as sent just before actual send
-	txSent = true
-
-	tx, err = m.contract.AddPieces(auth, proofSetID, m.address, pieceData, []byte{})
+	tx, err = m.contract.AddPieces(auth, proofSetID, listenerAddr, pieceData, []byte{})
 	if err != nil {
-		// Error after marking sent - don't release nonce, it may be pending
+		// txSent is still false - defer will call MarkFailed
 		return nil, fmt.Errorf("failed to add pieces: %w", err)
 	}
+	// Mark as sent only after successful contract call
+	txSent = true
 
 	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
 	if err != nil {
@@ -392,14 +397,13 @@ func (m *Manager) DeleteProofSet(ctx context.Context, proofSetID *big.Int, extra
 	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Context = ctx
 
-	// Mark as sent just before actual send
-	txSent = true
-
 	tx, err := m.contract.DeleteDataSet(auth, proofSetID, extraData)
 	if err != nil {
-		// Error after marking sent - don't release nonce, it may be pending
+		// txSent is still false - defer will call MarkFailed
 		return fmt.Errorf("failed to delete data set: %w", err)
 	}
+	// Mark as sent only after successful contract call
+	txSent = true
 
 	_, err = txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
 	if err != nil {
