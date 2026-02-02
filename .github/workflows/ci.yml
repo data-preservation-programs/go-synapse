@@ -30,3 +30,25 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+
+  verify-addresses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: regenerate addresses from FWSS
+        run: go generate ./constants/...
+      - name: check for drift
+        run: |
+          if git diff --exit-code constants/addresses_generated.go; then
+            echo "addresses match on-chain state"
+          else
+            echo "::error::addresses_generated.go differs from on-chain FWSS state"
+            echo "run 'go generate ./constants/...' and commit the result"
+            echo ""
+            echo "if using old addresses intentionally, add [skip-address-verify] to commit message"
+            exit 1
+          fi
+        if: ${{ !contains(github.event.head_commit.message, '[skip-address-verify]') }}
