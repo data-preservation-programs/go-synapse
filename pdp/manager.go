@@ -81,6 +81,10 @@ type AddRootsResult struct {
 }
 
 // Manager implements ProofSetManager
+//
+// TODO: Consider replacing privateKey with a Signer interface to support
+// hardware wallets, HSMs, and other signing backends. This would decouple
+// the Manager from direct key material handling.
 type Manager struct {
 	client      *ethclient.Client
 	privateKey  *ecdsa.PrivateKey
@@ -90,14 +94,6 @@ type Manager struct {
 	chainID     *big.Int
 	nonceManager *txutil.NonceManager
 	config      ManagerConfig
-}
-
-// NewManager creates a new ProofSetManager with default configuration.
-//
-// Deprecated: Use NewManagerWithContext for proper context support or
-// NewManagerWithConfig for custom configuration options.
-func NewManager(client *ethclient.Client, privateKey *ecdsa.PrivateKey, network constants.Network) (*Manager, error) {
-	return NewManagerWithContext(context.Background(), client, privateKey, network)
 }
 
 // NewManagerWithContext creates a new ProofSetManager with context support and default configuration.
@@ -121,6 +117,15 @@ func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, private
 	chainID, err := client.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	// Validate chain ID matches expected network
+	expectedChainID, ok := constants.ExpectedChainID(network)
+	if !ok {
+		return nil, fmt.Errorf("unknown network: %v", network)
+	}
+	if chainID.Int64() != expectedChainID {
+		return nil, fmt.Errorf("chain ID mismatch: RPC returned %d but network %s expects %d", chainID.Int64(), network, expectedChainID)
 	}
 
 	// Use default config if none provided

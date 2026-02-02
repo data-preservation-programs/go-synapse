@@ -26,8 +26,19 @@ The PDPVerifier contract implements the Provable Data Possession (PDP) protocol 
 
 ### Generating Go Bindings
 
-To generate Go bindings from this ABI:
+The Go bindings are generated from the JSON ABI files. The JSON files are the source of truth.
+
+To regenerate the Go bindings after updating an ABI:
 
 ```bash
-abigen --abi=contracts/abi/PDPVerifier.json --pkg=contracts --type=PDPVerifier --out=contracts/pdpverifier.go
+go generate ./contracts/...
 ```
+
+Or manually:
+
+```bash
+abigen --abi=contracts/abi/PDPVerifier.json --pkg=contracts --type=PDPVerifier --out=contracts/pdp_verifier.go
+```
+
+Note: Both the JSON ABI and generated Go files are committed to the repository
+to avoid requiring users to have `abigen` installed.

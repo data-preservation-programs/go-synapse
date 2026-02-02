@@ -216,7 +216,7 @@ Handle file uploads and storage operations.
 - `UploadFile()` - Upload a file to storage provider
 - `UploadData()` - Upload raw data
 - `FindPiece()` - Check if a piece exists
-- `DownloadPiece()` - Retrieve piece data
+- `Download()` - Retrieve piece data
 
 #### `pkg/txutil`
 Transaction utilities for robust blockchain interactions.

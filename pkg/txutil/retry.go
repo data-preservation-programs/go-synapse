@@ -2,10 +2,11 @@ package txutil
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
 	"time"
 
@@ -120,8 +121,24 @@ func CalculateBackoff(attempt int, initialBackoff, maxBackoff time.Duration, mul
 	// Apply decorrelated jitter to prevent synchronized retry storms
 	// Returns backoff/2 + random(0, backoff/2)
 	halfBackoff := backoff / 2
-	jitter := time.Duration(rand.Int63n(int64(halfBackoff) + 1))
+	jitter := time.Duration(secureRandomInt64n(int64(halfBackoff) + 1))
 	return halfBackoff + jitter
+}
+
+// secureRandomInt64n returns a cryptographically secure random int64 in [0, n).
+// This is goroutine-safe and suitable for security-sensitive contexts.
+func secureRandomInt64n(n int64) int64 {
+	if n <= 0 {
+		return 0
+	}
+	var buf [8]byte
+	_, err := cryptorand.Read(buf[:])
+	if err != nil {
+		// Fallback to 0 if crypto/rand fails (extremely rare)
+		return 0
+	}
+	// Use modulo for simplicity - bias is negligible for our use case (jitter)
+	return int64(binary.BigEndian.Uint64(buf[:]) % uint64(n))
 }
 
 // IsNonceError checks if an error is related to nonce issues

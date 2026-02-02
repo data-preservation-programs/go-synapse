@@ -72,15 +72,10 @@ func run() error {
 	log.Printf("Connected to %s (Chain ID: %d)", network, chainID.Int64())
 
 	// Create proof set manager
-	// Note: Using NewManager for backward compatibility, but NewManagerWithContext
-	// or NewManagerWithConfig are recommended for new code
-	manager, err := pdp.NewManager(client, privateKey, network)
+	manager, err := pdp.NewManagerWithContext(ctx, client, privateKey, network)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
-
-	// Alternative: Use NewManagerWithContext for explicit context support
-	// manager, err := pdp.NewManagerWithContext(ctx, client, privateKey, network)
 
 	// Alternative: Use NewManagerWithConfig for custom gas buffer
 	// config := pdp.DefaultManagerConfig()

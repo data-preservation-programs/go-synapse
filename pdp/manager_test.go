@@ -153,9 +153,9 @@ func TestManagerConstructors(t *testing.T) {
 
 	client, _ := ethclient.Dial("http://invalid")
 
-	t.Run("NewManager uses default config", func(t *testing.T) {
-		// This should use context.Background() and default config
-		_, err := NewManager(client, privateKey, constants.NetworkCalibration)
+	t.Run("NewManagerWithContext uses context.Background and default config", func(t *testing.T) {
+		// This should use default config
+		_, err := NewManagerWithContext(context.Background(), client, privateKey, constants.NetworkCalibration)
 		// Error is expected (no valid client), just verify it accepts the call
 		_ = err
 	})

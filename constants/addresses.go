@@ -67,3 +67,16 @@ var USDFCAddressesByChainID = map[int64]common.Address{
 	ChainIDMainnet:     common.HexToAddress("0x80B98d3aa09ffff255c3ba4A241111Ff1262F045"),
 	ChainIDCalibration: common.HexToAddress("0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0"),
 }
+
+// NetworkChainIDs maps network to expected chain ID
+var NetworkChainIDs = map[Network]int64{
+	NetworkMainnet:     ChainIDMainnet,
+	NetworkCalibration: ChainIDCalibration,
+}
+
+// ExpectedChainID returns the expected chain ID for a given network.
+// Returns the chain ID and true if the network is known, or 0 and false otherwise.
+func ExpectedChainID(network Network) (int64, bool) {
+	chainID, ok := NetworkChainIDs[network]
+	return chainID, ok
+}

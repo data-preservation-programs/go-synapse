@@ -68,7 +68,7 @@ func TestIntegration_ProofSetLifecycle(t *testing.T) {
 	defer client.Close()
 
 	// Create proof set manager
-	manager, err := pdp.NewManager(client, privateKey, constants.NetworkCalibration)
+	manager, err := pdp.NewManagerWithContext(ctx, client, privateKey, constants.NetworkCalibration)
 	if err != nil {
 		t.Fatalf("Failed to create manager: %v", err)
 	}
