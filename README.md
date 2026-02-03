@@ -83,8 +83,10 @@ func main() {
     privateKey, _ := crypto.HexToECDSA("your-private-key-hex")
     client, _ := ethclient.Dial("https://api.calibration.node.glif.io/rpc/v1")
 
+    signer := pdp.NewPrivateKeySigner(privateKey)
+
     // Create proof set manager (recommended: use NewManagerWithContext)
-    manager, err := pdp.NewManagerWithContext(ctx, client, privateKey, constants.NetworkCalibration)
+    manager, err := pdp.NewManagerWithContext(ctx, client, signer, constants.NetworkCalibration)
     if err != nil {
         log.Fatal(err)
     }
@@ -92,7 +94,7 @@ func main() {
     // For custom gas buffer configuration:
     // config := pdp.DefaultManagerConfig()
     // config.GasBufferPercent = 15  // Custom 15% buffer instead of default 10%
-    // manager, err := pdp.NewManagerWithConfig(ctx, client, privateKey, constants.NetworkCalibration, &config)
+    // manager, err := pdp.NewManagerWithConfig(ctx, client, signer, constants.NetworkCalibration, &config)
 
     // Create a new proof set
     result, err := manager.CreateProofSet(ctx, pdp.CreateProofSetOptions{

@@ -72,7 +72,8 @@ func run() error {
 	log.Printf("Connected to %s (Chain ID: %d)", network, chainID.Int64())
 
 	// Create proof set manager
-	manager, err := pdp.NewManagerWithContext(ctx, client, privateKey, network)
+	signer := pdp.NewPrivateKeySigner(privateKey)
+	manager, err := pdp.NewManagerWithContext(ctx, client, signer, network)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
@@ -80,7 +81,7 @@ func run() error {
 	// Alternative: Use NewManagerWithConfig for custom gas buffer
 	// config := pdp.DefaultManagerConfig()
 	// config.GasBufferPercent = 15  // Custom 15% buffer
-	// manager, err := pdp.NewManagerWithConfig(ctx, client, privateKey, network, &config)
+	// manager, err := pdp.NewManagerWithConfig(ctx, client, signer, network, &config)
 
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	log.Printf("Using address: %s", address.Hex())

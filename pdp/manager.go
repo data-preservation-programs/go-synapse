@@ -2,7 +2,6 @@ package pdp
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ipfs/go-cid"
 )
@@ -80,43 +78,28 @@ type AddRootsResult struct {
 	PieceIDs        []uint64
 }
 
-// Manager implements ProofSetManager
-//
-// TODO: Consider replacing privateKey with a Signer interface to support
-// hardware wallets, HSMs, and other signing backends. This would decouple
-// the Manager from direct key material handling.
+// Manager implements ProofSetManager.
 type Manager struct {
-	client      *ethclient.Client
-	privateKey  *ecdsa.PrivateKey
-	address     common.Address
-	contract    *contracts.PDPVerifier
+	client       *ethclient.Client
+	signer       Signer
+	address      common.Address
+	contract     *contracts.PDPVerifier
 	contractAddr common.Address
-	chainID     *big.Int
+	chainID      *big.Int
 	nonceManager *txutil.NonceManager
-	config      ManagerConfig
+	config       ManagerConfig
 }
 
 // NewManagerWithContext creates a new ProofSetManager with context support and default configuration.
-func NewManagerWithContext(ctx context.Context, client *ethclient.Client, privateKey *ecdsa.PrivateKey, network constants.Network) (*Manager, error) {
-	return NewManagerWithConfig(ctx, client, privateKey, network, nil)
+func NewManagerWithContext(ctx context.Context, client *ethclient.Client, signer Signer, network constants.Network) (*Manager, error) {
+	return NewManagerWithConfig(ctx, client, signer, network, nil)
 }
 
 // NewManagerWithConfig creates a new ProofSetManager with custom configuration.
 // If config is nil, default configuration will be used.
-func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, privateKey *ecdsa.PrivateKey, network constants.Network, config *ManagerConfig) (*Manager, error) {
-	contractAddr := constants.GetPDPVerifierAddress(network)
-	if contractAddr == (common.Address{}) {
-		return nil, fmt.Errorf("no PDPVerifier address for network %v", network)
-	}
-
-	contract, err := contracts.NewPDPVerifier(contractAddr, client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create contract instance: %w", err)
-	}
-
-	chainID, err := client.ChainID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, signer Signer, network constants.Network, config *ManagerConfig) (*Manager, error) {
+	if signer == nil {
+		return nil, fmt.Errorf("signer is required")
 	}
 
 	// Validate chain ID matches expected network
@@ -124,6 +107,15 @@ func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, private
 	if !ok {
 		return nil, fmt.Errorf("unknown network: %v", network)
 	}
+	if chainID.Int64() != expectedChainID {
+		return nil, fmt.Errorf("chain ID mismatch: RPC returned %d but network %s expects %d", chainID.Int64(), network, expectedChainID)
+	}
+
+	chainID, err := client.ChainID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
 	if chainID.Int64() != expectedChainID {
 		return nil, fmt.Errorf("chain ID mismatch: RPC returned %d but network %s expects %d", chainID.Int64(), network, expectedChainID)
 	}
@@ -139,12 +131,25 @@ func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, private
 		return nil, fmt.Errorf("gas buffer percent must be between 0 and 100, got %d", config.GasBufferPercent)
 	}
 
-	address := crypto.PubkeyToAddress(privateKey.PublicKey)
+	contractAddr := config.ContractAddress
+	if contractAddr == (common.Address{}) {
+		contractAddr = constants.GetPDPVerifierAddress(network)
+		if contractAddr == (common.Address{}) {
+			return nil, fmt.Errorf("no PDPVerifier address for network %v", network)
+		}
+	}
+
+	contract, err := contracts.NewPDPVerifier(contractAddr, client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create contract instance: %w", err)
+	}
+
+	address := signer.Address()
 	nonceManager := txutil.NewNonceManager(client, address)
 
 	return &Manager{
 		client:       client,
-		privateKey:   privateKey,
+		signer:       signer,
 		address:      address,
 		contract:     contract,
 		contractAddr: contractAddr,
@@ -152,6 +157,24 @@ func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, private
 		nonceManager: nonceManager,
 		config:       *config,
 	}, nil
+}
+
+func (m *Manager) newTransactor(ctx context.Context, nonce uint64, value *big.Int) (*bind.TransactOpts, error) {
+	signerFn, err := m.signer.SignerFunc(m.chainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer: %w", err)
+	}
+
+	auth := &bind.TransactOpts{
+		From:    m.address,
+		Signer:  signerFn,
+		Nonce:   big.NewInt(int64(nonce)),
+		Context: ctx,
+	}
+	if value != nil {
+		auth.Value = value
+	}
+	return auth, nil
 }
 
 // CreateProofSet creates a new proof set on-chain
@@ -170,15 +193,9 @@ func (m *Manager) CreateProofSet(ctx context.Context, opts CreateProofSetOptions
 		}
 	}()
 
-	auth, err := bind.NewKeyedTransactorWithChainID(m.privateKey, m.chainID)
+	auth, err := m.newTransactor(ctx, nonce, opts.Value)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create transactor: %w", err)
-	}
-	auth.Nonce = big.NewInt(int64(nonce))
-	auth.Context = ctx
-
-	if opts.Value != nil {
-		auth.Value = opts.Value
+		return nil, err
 	}
 
 	// Estimate gas
@@ -301,12 +318,10 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 		}
 	}()
 
-	auth, err := bind.NewKeyedTransactorWithChainID(m.privateKey, m.chainID)
+	auth, err := m.newTransactor(ctx, nonce, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create transactor: %w", err)
+		return nil, err
 	}
-	auth.Nonce = big.NewInt(int64(nonce))
-	auth.Context = ctx
 
 	// Estimate gas
 	auth.NoSend = true
@@ -395,12 +410,10 @@ func (m *Manager) DeleteProofSet(ctx context.Context, proofSetID *big.Int, extra
 		}
 	}()
 
-	auth, err := bind.NewKeyedTransactorWithChainID(m.privateKey, m.chainID)
+	auth, err := m.newTransactor(ctx, nonce, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create transactor: %w", err)
+		return err
 	}
-	auth.Nonce = big.NewInt(int64(nonce))
-	auth.Context = ctx
 
 	tx, err := m.contract.DeleteDataSet(auth, proofSetID, extraData)
 	if err != nil {

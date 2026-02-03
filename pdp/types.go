@@ -117,6 +117,9 @@ type ManagerConfig struct {
 	// GasBufferPercent is the percentage buffer to add to gas estimates (0-100)
 	// For example, 10 means add 10% to the estimated gas limit
 	GasBufferPercent int
+	// ContractAddress overrides the default PDPVerifier contract address for the network.
+	// Leave zero to use the network default.
+	ContractAddress common.Address
 }
 
 // DefaultManagerConfig returns the default configuration for Manager

@@ -71,6 +71,7 @@ func TestManagerConfigValidation_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
 	}
+	signer := NewPrivateKeySigner(privateKey)
 
 	// Create a mock client (this will fail to connect, but that's OK for config validation)
 	client, _ := ethclient.Dial("http://invalid")
@@ -82,7 +83,7 @@ func TestManagerConfigValidation_Integration(t *testing.T) {
 			GasBufferPercent: -10,
 		}
 
-		_, err := NewManagerWithConfig(ctx, client, privateKey, constants.NetworkCalibration, config)
+		_, err := NewManagerWithConfig(ctx, client, signer, constants.NetworkCalibration, config)
 		if err == nil {
 			t.Error("Expected error for negative gas buffer, got nil")
 		}
@@ -93,7 +94,7 @@ func TestManagerConfigValidation_Integration(t *testing.T) {
 			GasBufferPercent: 150,
 		}
 
-		_, err := NewManagerWithConfig(ctx, client, privateKey, constants.NetworkCalibration, config)
+		_, err := NewManagerWithConfig(ctx, client, signer, constants.NetworkCalibration, config)
 		if err == nil {
 			t.Error("Expected error for gas buffer > 100, got nil")
 		}
@@ -105,7 +106,7 @@ func TestManagerConfigValidation_Integration(t *testing.T) {
 		}
 
 		// This will fail at client connection, not config validation
-		_, err := NewManagerWithConfig(ctx, client, privateKey, constants.NetworkCalibration, config)
+		_, err := NewManagerWithConfig(ctx, client, signer, constants.NetworkCalibration, config)
 		// Error is OK, we just want to ensure it's not about config validation
 		if err != nil && err.Error() == "gas buffer percent must be between 0 and 100, got 15" {
 			t.Error("Valid config was rejected")
@@ -144,32 +145,33 @@ func TestRoot_CIDHandling(t *testing.T) {
 	})
 }
 
-// TestManagerConstructors tests backward compatibility of constructors
+// TestManagerConstructors tests constructor behavior
 func TestManagerConstructors(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
 	}
+	signer := NewPrivateKeySigner(privateKey)
 
 	client, _ := ethclient.Dial("http://invalid")
 
 	t.Run("NewManagerWithContext uses context.Background and default config", func(t *testing.T) {
 		// This should use default config
-		_, err := NewManagerWithContext(context.Background(), client, privateKey, constants.NetworkCalibration)
+		_, err := NewManagerWithContext(context.Background(), client, signer, constants.NetworkCalibration)
 		// Error is expected (no valid client), just verify it accepts the call
 		_ = err
 	})
 
 	t.Run("NewManagerWithContext uses default config", func(t *testing.T) {
 		ctx := context.Background()
-		_, err := NewManagerWithContext(ctx, client, privateKey, constants.NetworkCalibration)
+		_, err := NewManagerWithContext(ctx, client, signer, constants.NetworkCalibration)
 		// Error is expected (no valid client), just verify it accepts the call
 		_ = err
 	})
 
 	t.Run("NewManagerWithConfig accepts nil config", func(t *testing.T) {
 		ctx := context.Background()
-		_, err := NewManagerWithConfig(ctx, client, privateKey, constants.NetworkCalibration, nil)
+		_, err := NewManagerWithConfig(ctx, client, signer, constants.NetworkCalibration, nil)
 		// Error is expected (no valid client), just verify it accepts nil config
 		_ = err
 	})
@@ -179,7 +181,7 @@ func TestManagerConstructors(t *testing.T) {
 		config := &ManagerConfig{
 			GasBufferPercent: 20,
 		}
-		_, err := NewManagerWithConfig(ctx, client, privateKey, constants.NetworkCalibration, config)
+		_, err := NewManagerWithConfig(ctx, client, signer, constants.NetworkCalibration, config)
 		// Error is expected (no valid client), just verify it accepts custom config
 		_ = err
 	})
