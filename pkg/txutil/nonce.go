@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sort"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -13,12 +12,11 @@ import (
 
 // NonceManager manages nonces for transaction sending
 type NonceManager struct {
-	client      *ethclient.Client
-	address     common.Address
-	mu          sync.Mutex
-	nonce       *uint64
-	pendingTxs  map[uint64]bool
-	reclaimable []uint64 // Pool of failed nonces available for reuse
+	client     *ethclient.Client
+	address    common.Address
+	mu         sync.Mutex
+	nonce      *uint64
+	pendingTxs map[uint64]bool
 }
 
 // NewNonceManager creates a new nonce manager
@@ -34,18 +32,6 @@ func NewNonceManager(client *ethclient.Client, address common.Address) *NonceMan
 func (nm *NonceManager) GetNonce(ctx context.Context) (uint64, error) {
 	nm.mu.Lock()
 	defer nm.mu.Unlock()
-
-	// First, check if we have any reclaimable nonces from failed transactions
-	// Use the smallest one to avoid gaps in the nonce sequence
-	if len(nm.reclaimable) > 0 {
-		sort.Slice(nm.reclaimable, func(i, j int) bool {
-			return nm.reclaimable[i] < nm.reclaimable[j]
-		})
-		nonce := nm.reclaimable[0]
-		nm.reclaimable = nm.reclaimable[1:]
-		nm.pendingTxs[nonce] = true
-		return nonce, nil
-	}
 
 	if nm.nonce == nil {
 		nonce, err := nm.client.PendingNonceAt(ctx, nm.address)
@@ -73,19 +59,16 @@ func (nm *NonceManager) MarkConfirmed(nonce uint64) {
 // This should be called when a transaction fails before being sent (e.g., gas estimation
 // failure, signing error) to prevent nonce leaks that would block future transactions.
 //
-// The nonce is added to a reclaimable pool and will be reused by the next GetNonce() call.
-// This prevents nonce gaps when multiple transactions fail out-of-order.
-//
 // IMPORTANT: Only call this for local failures before the transaction is sent.
 // Do NOT call this for network errors after sending - those transactions may still
 // be pending in the mempool and should be tracked until confirmed or replaced.
+//
+// The cached nonce is cleared to force a refresh from the network on the next GetNonce.
 func (nm *NonceManager) MarkFailed(nonce uint64) {
 	nm.mu.Lock()
 	defer nm.mu.Unlock()
 	delete(nm.pendingTxs, nonce)
-
-	// Add to reclaimable pool for reuse - this handles out-of-order failures
-	nm.reclaimable = append(nm.reclaimable, nonce)
+	nm.nonce = nil
 }
 
 // Reset resets the nonce manager (fetches fresh nonce from network)
@@ -100,7 +83,6 @@ func (nm *NonceManager) Reset(ctx context.Context) error {
 
 	nm.nonce = &nonce
 	nm.pendingTxs = make(map[uint64]bool)
-	nm.reclaimable = nil
 	return nil
 }
 

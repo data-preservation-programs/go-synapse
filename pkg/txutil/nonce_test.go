@@ -10,7 +10,7 @@ import (
 func TestNonceManager_MarkFailed(t *testing.T) {
 	address := common.HexToAddress("0x1234567890123456789012345678901234567890")
 
-	t.Run("mark failed adds nonce to reclaimable pool", func(t *testing.T) {
+	t.Run("mark failed clears pending and cached nonce", func(t *testing.T) {
 		// Create fresh instance for this test
 		nm := &NonceManager{
 			client:     (*ethclient.Client)(nil),
@@ -36,21 +36,17 @@ func TestNonceManager_MarkFailed(t *testing.T) {
 		// Mark as failed
 		nm.MarkFailed(currentNonce)
 
-		// Verify nonce was released and added to reclaimable pool
+		// Verify nonce was released
 		if len(nm.pendingTxs) != 0 {
 			t.Errorf("expected 0 pending txs, got %d", len(nm.pendingTxs))
 		}
-		// Nonce counter stays the same (no rollback)
-		if *nm.nonce != 11 {
-			t.Errorf("expected nonce counter to stay at 11, got %d", *nm.nonce)
-		}
-		// But the nonce should be in the reclaimable pool
-		if len(nm.reclaimable) != 1 || nm.reclaimable[0] != 10 {
-			t.Errorf("expected reclaimable pool to contain [10], got %v", nm.reclaimable)
+		// Cached nonce should be cleared so next GetNonce refreshes from network
+		if nm.nonce != nil {
+			t.Errorf("expected cached nonce to be cleared, got %v", *nm.nonce)
 		}
 	})
 
-	t.Run("mark failed on old nonce adds to reclaimable pool", func(t *testing.T) {
+	t.Run("mark failed on old nonce clears cached nonce", func(t *testing.T) {
 		// Create fresh instance for this test
 		nm := &NonceManager{
 			client:     (*ethclient.Client)(nil),
@@ -72,46 +68,9 @@ func TestNonceManager_MarkFailed(t *testing.T) {
 		if _, exists := nm.pendingTxs[15]; exists {
 			t.Error("nonce 15 should be removed from pending")
 		}
-		// Nonce counter stays the same
-		if *nm.nonce != 18 {
-			t.Errorf("nonce counter should stay at 18, got %d", *nm.nonce)
-		}
-		// Should be in reclaimable pool
-		if len(nm.reclaimable) != 1 || nm.reclaimable[0] != 15 {
-			t.Errorf("expected reclaimable pool to contain [15], got %v", nm.reclaimable)
-		}
-	})
-
-	t.Run("multiple failed nonces are all reclaimable", func(t *testing.T) {
-		// Create fresh instance for this test
-		nm := &NonceManager{
-			client:     (*ethclient.Client)(nil),
-			address:    address,
-			pendingTxs: make(map[uint64]bool),
-		}
-		currentNonce := uint64(35)
-		nm.nonce = &currentNonce
-
-		// Allocate several nonces
-		nm.pendingTxs[30] = true
-		nm.pendingTxs[31] = true
-		nm.pendingTxs[32] = true
-		nm.pendingTxs[33] = true
-		nm.pendingTxs[34] = true
-
-		// Mark several as failed (out of order to test sorting)
-		nm.MarkFailed(32)
-		nm.MarkFailed(30)
-		nm.MarkFailed(34)
-
-		// All should be in reclaimable pool
-		if len(nm.reclaimable) != 3 {
-			t.Errorf("expected 3 reclaimable nonces, got %d", len(nm.reclaimable))
-		}
-
-		// Nonce counter stays the same
-		if *nm.nonce != 35 {
-			t.Errorf("nonce counter should stay at 35, got %d", *nm.nonce)
+		// Cached nonce should be cleared
+		if nm.nonce != nil {
+			t.Errorf("expected cached nonce to be cleared, got %v", *nm.nonce)
 		}
 	})
 }
@@ -167,65 +126,29 @@ func TestNonceManager_GetPendingCount(t *testing.T) {
 	}
 }
 
-func TestNonceManager_ReclaimablePool(t *testing.T) {
+func TestNonceManager_ResetClearsPending(t *testing.T) {
 	address := common.HexToAddress("0x1234567890123456789012345678901234567890")
 
-	t.Run("reclaimable nonces are reused in sorted order", func(t *testing.T) {
-		nm := &NonceManager{
-			client:     (*ethclient.Client)(nil),
-			address:    address,
-			pendingTxs: make(map[uint64]bool),
-		}
-		currentNonce := uint64(100)
-		nm.nonce = &currentNonce
+	nm := &NonceManager{
+		client:     (*ethclient.Client)(nil),
+		address:    address,
+		pendingTxs: make(map[uint64]bool),
+	}
+	currentNonce := uint64(100)
+	nm.nonce = &currentNonce
+	nm.pendingTxs[60] = true
 
-		// Add some nonces to reclaimable pool (out of order)
-		nm.reclaimable = []uint64{50, 30, 40}
+	// Manually simulate reset (without network call)
+	nm.mu.Lock()
+	nm.pendingTxs = make(map[uint64]bool)
+	nm.nonce = nil
+	nm.mu.Unlock()
 
-		// GetNonce should use smallest reclaimable first
-		nm.mu.Lock()
-		// Simulate what GetNonce does for reclaimable
-		if len(nm.reclaimable) > 0 {
-			// Sort and take smallest
-			smallest := nm.reclaimable[0]
-			for _, n := range nm.reclaimable {
-				if n < smallest {
-					smallest = n
-				}
-			}
-			// Should be 30
-			if smallest != 30 {
-				t.Errorf("expected smallest to be 30, got %d", smallest)
-			}
-		}
-		nm.mu.Unlock()
-	})
-
-	t.Run("reset clears reclaimable pool", func(t *testing.T) {
-		nm := &NonceManager{
-			client:     (*ethclient.Client)(nil),
-			address:    address,
-			pendingTxs: make(map[uint64]bool),
-		}
-		currentNonce := uint64(100)
-		nm.nonce = &currentNonce
-
-		// Add some nonces to reclaimable pool
-		nm.reclaimable = []uint64{50, 30, 40}
-		nm.pendingTxs[60] = true
-
-		// Manually simulate reset (without network call)
-		nm.mu.Lock()
-		nm.pendingTxs = make(map[uint64]bool)
-		nm.reclaimable = nil
-		nm.mu.Unlock()
-
-		// Verify reclaimable is cleared
-		if nm.reclaimable != nil {
-			t.Errorf("expected reclaimable to be nil, got %v", nm.reclaimable)
-		}
-		if len(nm.pendingTxs) != 0 {
-			t.Errorf("expected pendingTxs to be empty, got %d", len(nm.pendingTxs))
-		}
-	})
+	// Verify pendingTxs cleared and cached nonce reset
+	if nm.nonce != nil {
+		t.Errorf("expected cached nonce to be nil, got %v", nm.nonce)
+	}
+	if len(nm.pendingTxs) != 0 {
+		t.Errorf("expected pendingTxs to be empty, got %d", len(nm.pendingTxs))
+	}
 }

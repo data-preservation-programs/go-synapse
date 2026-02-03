@@ -1,6 +1,7 @@
 package txutil
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -45,6 +46,16 @@ func TestIsRetryableError(t *testing.T) {
 		{
 			name:     "non-retryable error",
 			err:      errors.New("insufficient funds"),
+			expected: false,
+		},
+		{
+			name:     "context deadline exceeded",
+			err:      context.DeadlineExceeded,
+			expected: false,
+		},
+		{
+			name:     "context canceled",
+			err:      context.Canceled,
 			expected: false,
 		},
 	}

@@ -2,6 +2,7 @@ package pdp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -99,7 +100,7 @@ func NewManagerWithContext(ctx context.Context, client *ethclient.Client, signer
 // If config is nil, default configuration will be used.
 func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, signer Signer, network constants.Network, config *ManagerConfig) (*Manager, error) {
 	if signer == nil {
-		return nil, fmt.Errorf("signer is required")
+		return nil, errors.New("signer is required")
 	}
 
 	// Validate chain ID matches expected network
@@ -107,10 +108,6 @@ func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, signer 
 	if !ok {
 		return nil, fmt.Errorf("unknown network: %v", network)
 	}
-	if chainID.Int64() != expectedChainID {
-		return nil, fmt.Errorf("chain ID mismatch: RPC returned %d but network %s expects %d", chainID.Int64(), network, expectedChainID)
-	}
-
 	chainID, err := client.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chain ID: %w", err)
@@ -286,7 +283,7 @@ func (m *Manager) GetProofSet(ctx context.Context, proofSetID *big.Int) (*ProofS
 // AddRoots adds data roots to an existing proof set
 func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Root) (*AddRootsResult, error) {
 	if len(roots) == 0 {
-		return nil, fmt.Errorf("no roots provided")
+		return nil, errors.New("no roots provided")
 	}
 
 	// Get the proof set's listener address
@@ -465,7 +462,7 @@ func (m *Manager) extractProofSetIDFromReceipt(receipt *types.Receipt) (*big.Int
 			return event.SetId, nil
 		}
 	}
-	return nil, fmt.Errorf("DataSetCreated event not found in receipt")
+	return nil, errors.New("DataSetCreated event not found in receipt")
 }
 
 // extractPieceIDsFromReceipt extracts piece IDs from transaction receipt logs
@@ -480,5 +477,5 @@ func (m *Manager) extractPieceIDsFromReceipt(receipt *types.Receipt) ([]uint64, 
 			return pieceIDs, nil
 		}
 	}
-	return nil, fmt.Errorf("PiecesAdded event not found in receipt")
+	return nil, errors.New("PiecesAdded event not found in receipt")
 }

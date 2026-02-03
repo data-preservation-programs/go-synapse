@@ -22,16 +22,16 @@ var (
 
 // ReceiptWaitConfig configures the WaitForReceipt behavior
 type ReceiptWaitConfig struct {
-	Timeout             time.Duration // Total timeout for waiting (default: 5 minutes)
-	PollInterval        time.Duration // How often to poll (default: 1 second)
-	MaxConsecutiveErrors int          // Max consecutive RPC errors before failing (default: 5)
+	Timeout              time.Duration // Total timeout for waiting (default: 5 minutes)
+	PollInterval         time.Duration // How often to poll (default: 1 second)
+	MaxConsecutiveErrors int           // Max consecutive RPC errors before failing (default: 5)
 }
 
 // DefaultReceiptWaitConfig returns the default configuration
 func DefaultReceiptWaitConfig() ReceiptWaitConfig {
 	return ReceiptWaitConfig{
-		Timeout:             5 * time.Minute,
-		PollInterval:        time.Second,
+		Timeout:              5 * time.Minute,
+		PollInterval:         time.Second,
 		MaxConsecutiveErrors: 5,
 	}
 }
@@ -48,7 +48,10 @@ func WaitForConfirmation(ctx context.Context, client *ethclient.Client, txHash c
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			if lastErr != nil {
+				return nil, fmt.Errorf("%w after %d polls: %v (last error: %v)", ErrReceiptTimeout, pollCount, ctx.Err(), lastErr)
+			}
+			return nil, fmt.Errorf("%w after %d polls: %v", ErrReceiptTimeout, pollCount, ctx.Err())
 		case <-ticker.C:
 			pollCount++
 			receipt, err := client.TransactionReceipt(ctx, txHash)
@@ -58,6 +61,9 @@ func WaitForConfirmation(ctx context.Context, client *ethclient.Client, txHash c
 					// Transaction not mined yet - this is expected, reset error counter
 					consecutiveErrors = 0
 					continue
+				}
+				if !IsRetryableError(err) {
+					return nil, fmt.Errorf("%w: non-retryable error: %v", ErrReceiptRPCFailure, err)
 				}
 				// Actual RPC error
 				consecutiveErrors++
@@ -80,6 +86,9 @@ func WaitForConfirmation(ctx context.Context, client *ethclient.Client, txHash c
 
 			currentBlock, err := client.BlockNumber(ctx)
 			if err != nil {
+				if !IsRetryableError(err) {
+					return nil, fmt.Errorf("%w: non-retryable error: %v", ErrReceiptRPCFailure, err)
+				}
 				consecutiveErrors++
 				lastErr = err
 				if consecutiveErrors >= 5 {
@@ -131,6 +140,9 @@ func WaitForReceiptWithConfig(ctx context.Context, client *ethclient.Client, txH
 	for {
 		select {
 		case <-ctx.Done():
+			if lastErr != nil {
+				return nil, fmt.Errorf("%w after %d polls: %v (last error: %v)", ErrReceiptTimeout, pollCount, ctx.Err(), lastErr)
+			}
 			return nil, fmt.Errorf("%w after %d polls: %v", ErrReceiptTimeout, pollCount, ctx.Err())
 		case <-ticker.C:
 			pollCount++
@@ -141,6 +153,9 @@ func WaitForReceiptWithConfig(ctx context.Context, client *ethclient.Client, txH
 					// Transaction not mined yet - this is expected, reset error counter
 					consecutiveErrors = 0
 					continue
+				}
+				if !IsRetryableError(err) {
+					return nil, fmt.Errorf("%w: non-retryable error: %v", ErrReceiptRPCFailure, err)
 				}
 				// Actual RPC error
 				consecutiveErrors++

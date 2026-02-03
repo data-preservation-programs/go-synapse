@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -26,7 +27,7 @@ func run() error {
 	// Get configuration from environment
 	privateKeyHex := os.Getenv("PRIVATE_KEY")
 	if privateKeyHex == "" {
-		return fmt.Errorf("PRIVATE_KEY environment variable not set")
+		return errors.New("PRIVATE_KEY environment variable not set")
 	}
 
 	rpcURL := os.Getenv("RPC_URL")
@@ -37,7 +38,7 @@ func run() error {
 
 	listenerAddr := os.Getenv("LISTENER_ADDRESS")
 	if listenerAddr == "" {
-		return fmt.Errorf("LISTENER_ADDRESS environment variable not set")
+		return errors.New("LISTENER_ADDRESS environment variable not set")
 	}
 
 	// Parse private key

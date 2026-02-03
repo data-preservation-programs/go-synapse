@@ -38,6 +38,9 @@ func IsRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 
 	errStr := strings.ToLower(err.Error())
 
@@ -61,23 +64,22 @@ func IsRetryableError(err error) bool {
 	return false
 }
 
+// ErrNonRetryable is returned when a non-retryable error occurs.
+var ErrNonRetryable = errors.New("non-retryable error")
+
 // SendTransactionWithRetry sends a transaction with retry logic
 func SendTransactionWithRetry(ctx context.Context, client *ethclient.Client, tx *types.Transaction, config RetryConfig) (common.Hash, error) {
 	var lastErr error
-	backoff := config.InitialBackoff
 
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
+			backoff := CalculateBackoff(attempt-1, config.InitialBackoff, config.MaxBackoff, config.BackoffMultiple)
 			select {
 			case <-ctx.Done():
 				return common.Hash{}, ctx.Err()
 			case <-time.After(backoff):
 			}
 
-			backoff = time.Duration(float64(backoff) * config.BackoffMultiple)
-			if backoff > config.MaxBackoff {
-				backoff = config.MaxBackoff
-			}
 		}
 
 		err := client.SendTransaction(ctx, tx)
@@ -87,7 +89,7 @@ func SendTransactionWithRetry(ctx context.Context, client *ethclient.Client, tx 
 
 		lastErr = err
 		if !IsRetryableError(err) {
-			return common.Hash{}, fmt.Errorf("non-retryable error: %w", err)
+			return common.Hash{}, fmt.Errorf("%w: %v", ErrNonRetryable, err)
 		}
 	}
 
@@ -148,8 +150,8 @@ func IsNonceError(err error) bool {
 	}
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "nonce too low") ||
-		   strings.Contains(errStr, "nonce too high") ||
-		   strings.Contains(errStr, "invalid nonce")
+		strings.Contains(errStr, "nonce too high") ||
+		strings.Contains(errStr, "invalid nonce")
 }
 
 // IsGasError checks if an error is related to gas issues
@@ -159,7 +161,7 @@ func IsGasError(err error) bool {
 	}
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "gas") ||
-		   strings.Contains(errStr, "fee")
+		strings.Contains(errStr, "fee")
 }
 
 // WrapError wraps an error with context
