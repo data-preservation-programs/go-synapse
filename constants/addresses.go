@@ -69,3 +69,12 @@ var WarmStorageAddresses = map[Network]common.Address{
 	NetworkMainnet:     FWSSAddressMainnet,
 	NetworkCalibration: FWSSAddressCalibration,
 }
+
+// GetPDPVerifierAddress returns the PDPVerifier contract address for the given network
+func GetPDPVerifierAddress(network Network) common.Address {
+	addr, ok := PDPVerifierAddresses[network]
+	if !ok {
+		return common.Address{}
+	}
+	return addr
+}
