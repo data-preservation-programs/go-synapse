@@ -1,3 +1,5 @@
+//go:generate go run ../internal/generate/addresses.go
+
 package constants
 
 import (
@@ -7,7 +9,7 @@ import (
 type Network string
 
 const (
-	NetworkMainnet Network = "mainnet"
+	NetworkMainnet     Network = "mainnet"
 	NetworkCalibration Network = "calibration"
 )
 
@@ -16,17 +18,8 @@ const (
 	ChainIDCalibration int64 = 314159
 )
 
+// static addresses not derived from FWSS
 var (
-	WarmStorageAddresses = map[Network]common.Address{
-		NetworkMainnet:     common.HexToAddress("0x8408502033C418E1bbC97cE9ac48E5528F371A9f"),
-		NetworkCalibration: common.HexToAddress("0x02925630df557F957f70E112bA06e50965417CA0"),
-	}
-
-	SPRegistryAddresses = map[Network]common.Address{
-		NetworkMainnet:     common.HexToAddress("0xf55dDbf63F1b55c3F1D4FA7e339a68AB7b64A5eB"),
-		NetworkCalibration: common.HexToAddress("0x839e5c9988e4e9977d40708d0094103c0839Ac9D"),
-	}
-
 	Multicall3Addresses = map[Network]common.Address{
 		NetworkMainnet:     common.HexToAddress("0xcA11bde05977b3631167028862bE2a173976CA11"),
 		NetworkCalibration: common.HexToAddress("0xcA11bde05977b3631167028862bE2a173976CA11"),
@@ -35,16 +28,6 @@ var (
 	USDFCAddresses = map[Network]common.Address{
 		NetworkMainnet:     common.HexToAddress("0x80B98d3aa09ffff255c3ba4A241111Ff1262F045"),
 		NetworkCalibration: common.HexToAddress("0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0"),
-	}
-
-	PaymentsAddresses = map[Network]common.Address{
-		NetworkMainnet:     common.HexToAddress("0x23b1e018F08BB982348b15a86ee926eEBf7F4DAa"),
-		NetworkCalibration: common.HexToAddress("0x09a0fDc2723fAd1A7b8e3e00eE5DF73841df55a0"),
-	}
-
-	WarmStorageStateViewAddresses = map[Network]common.Address{
-		NetworkMainnet:     common.HexToAddress("0x9e4e6699d8F67dFc883d6b0A7344Bd56F7E80B46"),
-		NetworkCalibration: common.HexToAddress("0xA5D87b04086B1d591026cCE10255351B5AA4689B"),
 	}
 )
 
@@ -79,4 +62,19 @@ var NetworkChainIDs = map[Network]int64{
 func ExpectedChainID(network Network) (int64, bool) {
 	chainID, ok := NetworkChainIDs[network]
 	return chainID, ok
+}
+
+// WarmStorageAddresses aliases the FWSS addresses (root of trust)
+var WarmStorageAddresses = map[Network]common.Address{
+	NetworkMainnet:     FWSSAddressMainnet,
+	NetworkCalibration: FWSSAddressCalibration,
+}
+
+// GetPDPVerifierAddress returns the PDPVerifier contract address for the given network
+func GetPDPVerifierAddress(network Network) common.Address {
+	addr, ok := PDPVerifierAddresses[network]
+	if !ok {
+		return common.Address{}
+	}
+	return addr
 }
