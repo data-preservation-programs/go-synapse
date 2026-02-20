@@ -9,6 +9,7 @@ import (
 
 	"github.com/data-preservation-programs/go-synapse/constants"
 	"github.com/data-preservation-programs/go-synapse/pdp"
+	"github.com/data-preservation-programs/go-synapse/signer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -72,9 +73,12 @@ func run() error {
 
 	log.Printf("Connected to %s (Chain ID: %d)", network, chainID.Int64())
 
-	// Create proof set manager
-	signer := pdp.NewPrivateKeySigner(privateKey)
-	manager, err := pdp.NewManagerWithContext(ctx, client, signer, network)
+	// Create signer and proof set manager
+	s, err := signer.NewSecp256k1SignerFromECDSA(privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to create signer: %w", err)
+	}
+	manager, err := pdp.NewManagerWithContext(ctx, client, s, network)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
@@ -82,7 +86,7 @@ func run() error {
 	// Alternative: Use NewManagerWithConfig for custom gas buffer
 	// config := pdp.DefaultManagerConfig()
 	// config.GasBufferPercent = 15  // Custom 15% buffer
-	// manager, err := pdp.NewManagerWithConfig(ctx, client, signer, network, &config)
+	// manager, err := pdp.NewManagerWithConfig(ctx, client, s, network, &config)
 
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	log.Printf("Using address: %s", address.Hex())

@@ -70,6 +70,7 @@ import (
 
     "github.com/data-preservation-programs/go-synapse/constants"
     "github.com/data-preservation-programs/go-synapse/pdp"
+    "github.com/data-preservation-programs/go-synapse/signer"
     "github.com/ethereum/go-ethereum/common"
     "github.com/ethereum/go-ethereum/crypto"
     "github.com/ethereum/go-ethereum/ethclient"
@@ -83,10 +84,10 @@ func main() {
     privateKey, _ := crypto.HexToECDSA("your-private-key-hex")
     client, _ := ethclient.Dial("https://api.calibration.node.glif.io/rpc/v1")
 
-    signer := pdp.NewPrivateKeySigner(privateKey)
+    s, _ := signer.NewSecp256k1SignerFromECDSA(privateKey)
 
     // Create proof set manager (recommended: use NewManagerWithContext)
-    manager, err := pdp.NewManagerWithContext(ctx, client, signer, constants.NetworkCalibration)
+    manager, err := pdp.NewManagerWithContext(ctx, client, s, constants.NetworkCalibration)
     if err != nil {
         log.Fatal(err)
     }
@@ -94,7 +95,7 @@ func main() {
     // For custom gas buffer configuration:
     // config := pdp.DefaultManagerConfig()
     // config.GasBufferPercent = 15  // Custom 15% buffer instead of default 10%
-    // manager, err := pdp.NewManagerWithConfig(ctx, client, signer, constants.NetworkCalibration, &config)
+    // manager, err := pdp.NewManagerWithConfig(ctx, client, s, constants.NetworkCalibration, &config)
 
     // Create a new proof set
     result, err := manager.CreateProofSet(ctx, pdp.CreateProofSetOptions{
