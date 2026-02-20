@@ -11,6 +11,7 @@ import (
 
 	"github.com/data-preservation-programs/go-synapse/constants"
 	"github.com/data-preservation-programs/go-synapse/pdp"
+	"github.com/data-preservation-programs/go-synapse/signer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -68,8 +69,11 @@ func TestIntegration_ProofSetLifecycle(t *testing.T) {
 	defer client.Close()
 
 	// Create proof set manager
-	signer := pdp.NewPrivateKeySigner(privateKey)
-	manager, err := pdp.NewManagerWithContext(ctx, client, signer, constants.NetworkCalibration)
+	s, err := signer.NewSecp256k1SignerFromECDSA(privateKey)
+	if err != nil {
+		t.Fatalf("Failed to create signer: %v", err)
+	}
+	manager, err := pdp.NewManagerWithContext(ctx, client, s, constants.NetworkCalibration)
 	if err != nil {
 		t.Fatalf("Failed to create manager: %v", err)
 	}
