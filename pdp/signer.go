@@ -2,44 +2,24 @@ package pdp
 
 import (
 	"crypto/ecdsa"
-	"fmt"
-	"math/big"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/data-preservation-programs/go-synapse/signer"
 )
 
-// Signer provides transaction signing for the Manager without exposing key material.
-type Signer interface {
-	Address() common.Address
-	SignerFunc(chainID *big.Int) (bind.SignerFn, error)
-}
+// Signer is kept for backward compatibility. New code should use signer.EVMSigner.
+type Signer = signer.EVMSigner
 
-// PrivateKeySigner is a simple signer backed by a local ECDSA private key.
-type PrivateKeySigner struct {
-	privateKey *ecdsa.PrivateKey
-	address    common.Address
-}
+// PrivateKeySigner is kept for backward compatibility.
+type PrivateKeySigner = signer.Secp256k1Signer
 
-// NewPrivateKeySigner creates a signer backed by the provided private key.
+// NewPrivateKeySigner creates a dual-protocol signer from an ECDSA private key.
+// Kept for backward compatibility — new code should use
+// signer.NewSecp256k1SignerFromECDSA or signer.NewSecp256k1Signer.
 func NewPrivateKeySigner(privateKey *ecdsa.PrivateKey) *PrivateKeySigner {
-	return &PrivateKeySigner{
-		privateKey: privateKey,
-		address:    crypto.PubkeyToAddress(privateKey.PublicKey),
-	}
-}
-
-// Address returns the signer address.
-func (s *PrivateKeySigner) Address() common.Address {
-	return s.address
-}
-
-// SignerFunc returns a bind.SignerFn using the provided chain ID.
-func (s *PrivateKeySigner) SignerFunc(chainID *big.Int) (bind.SignerFn, error) {
-	auth, err := bind.NewKeyedTransactorWithChainID(s.privateKey, chainID)
+	s, err := signer.NewSecp256k1SignerFromECDSA(privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create transactor: %w", err)
+		// should never happen for a valid *ecdsa.PrivateKey
+		panic("NewPrivateKeySigner: " + err.Error())
 	}
-	return auth.Signer, nil
+	return s
 }

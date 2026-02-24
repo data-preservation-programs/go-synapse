@@ -141,7 +141,7 @@ func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, signer 
 		return nil, fmt.Errorf("failed to create contract instance: %w", err)
 	}
 
-	address := signer.Address()
+	address := signer.EVMAddress()
 	nonceManager := txutil.NewNonceManager(client, address)
 
 	return &Manager{
@@ -157,17 +157,13 @@ func NewManagerWithConfig(ctx context.Context, client *ethclient.Client, signer 
 }
 
 func (m *Manager) newTransactor(ctx context.Context, nonce uint64, value *big.Int) (*bind.TransactOpts, error) {
-	signerFn, err := m.signer.SignerFunc(m.chainID)
+	auth, err := m.signer.Transactor(m.chainID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create signer: %w", err)
+		return nil, fmt.Errorf("failed to create transactor: %w", err)
 	}
 
-	auth := &bind.TransactOpts{
-		From:    m.address,
-		Signer:  signerFn,
-		Nonce:   big.NewInt(int64(nonce)),
-		Context: ctx,
-	}
+	auth.Nonce = big.NewInt(int64(nonce))
+	auth.Context = ctx
 	if value != nil {
 		auth.Value = value
 	}
