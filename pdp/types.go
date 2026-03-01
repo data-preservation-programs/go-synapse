@@ -115,8 +115,14 @@ type UploadCompleteResponse struct {
 // ManagerConfig holds configuration options for the Manager
 type ManagerConfig struct {
 	// GasBufferPercent is the percentage buffer to add to gas estimates (0-100)
-	// For example, 10 means add 10% to the estimated gas limit
+	// For example, 10 means add 10% to the estimated gas limit.
+	// Ignored when DefaultGasLimit is set.
 	GasBufferPercent int
+	// DefaultGasLimit, when non-zero, is used for all transactions instead
+	// of estimating gas. FEVM gas estimation is unreliable for payable
+	// calls and for contracts that do cross-actor calls, so callers should
+	// set this when targeting FEVM.
+	DefaultGasLimit uint64
 	// ContractAddress overrides the default PDPVerifier contract address for the network.
 	// Leave zero to use the network default.
 	ContractAddress common.Address

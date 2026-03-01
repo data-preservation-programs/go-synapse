@@ -37,10 +37,9 @@ func run() error {
 		log.Printf("Using default RPC URL: %s", rpcURL)
 	}
 
+	// defaults to address(0) -- passing an EOA reverts because the contract
+	// calls PDPListener(addr).dataSetCreated() on non-zero addresses
 	listenerAddr := os.Getenv("LISTENER_ADDRESS")
-	if listenerAddr == "" {
-		return errors.New("LISTENER_ADDRESS environment variable not set")
-	}
 
 	// Parse private key
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)

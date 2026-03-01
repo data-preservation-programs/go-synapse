@@ -16,6 +16,10 @@ import (
 	"github.com/ipfs/go-cid"
 )
 
+// SybilFee is the 0.1 FIL creation fee required by the PDP contract's
+// createDataSet. defined in Fees.sol as SYBIL_FEE.
+var SybilFee = big.NewInt(100000000000000000) // 0.1 FIL in attoFIL
+
 // ProofSetManager provides high-level operations for managing PDP proof sets
 type ProofSetManager interface {
 	// CreateProofSet creates a new proof set on-chain
@@ -42,9 +46,14 @@ type ProofSetManager interface {
 
 // CreateProofSetOptions options for creating a proof set
 type CreateProofSetOptions struct {
+	// Listener is the PDP listener contract address. Use address(0) when no
+	// listener is needed -- passing an EOA reverts because the contract calls
+	// PDPListener(addr).dataSetCreated() on non-zero addresses.
 	Listener  common.Address
 	ExtraData []byte
-	Value     *big.Int // Optional payment value
+	// Value overrides the msg.value sent with CreateDataSet. Defaults to
+	// the 0.1 FIL sybil fee when nil.
+	Value *big.Int
 }
 
 // ProofSetResult result of creating a proof set
@@ -167,6 +176,9 @@ func (m *Manager) newTransactor(ctx context.Context, nonce uint64, value *big.In
 	if value != nil {
 		auth.Value = value
 	}
+	if m.config.DefaultGasLimit > 0 {
+		auth.GasLimit = m.config.DefaultGasLimit
+	}
 	return auth, nil
 }
 
@@ -186,23 +198,30 @@ func (m *Manager) CreateProofSet(ctx context.Context, opts CreateProofSetOptions
 		}
 	}()
 
-	auth, err := m.newTransactor(ctx, nonce, opts.Value)
+	// default to sybil fee when caller doesn't specify a value
+	value := opts.Value
+	if value == nil {
+		value = SybilFee
+	}
+
+	auth, err := m.newTransactor(ctx, nonce, value)
 	if err != nil {
 		return nil, err
 	}
 
-	// Estimate gas
-	auth.NoSend = true
-	tx, err := m.contract.CreateDataSet(auth, opts.Listener, opts.ExtraData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to estimate gas for createDataSet: %w", err)
+	if m.config.DefaultGasLimit == 0 {
+		// estimate gas
+		auth.NoSend = true
+		tx, err := m.contract.CreateDataSet(auth, opts.Listener, opts.ExtraData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to estimate gas for createDataSet: %w", err)
+		}
+		bufferMultiplier := 1.0 + (float64(m.config.GasBufferPercent) / 100.0)
+		auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
+		auth.NoSend = false
 	}
-	// Apply configurable gas buffer
-	bufferMultiplier := 1.0 + (float64(m.config.GasBufferPercent) / 100.0)
-	auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
-	auth.NoSend = false
 
-	tx, err = m.contract.CreateDataSet(auth, opts.Listener, opts.ExtraData)
+	tx, err := m.contract.CreateDataSet(auth, opts.Listener, opts.ExtraData)
 	if err != nil {
 		// txSent is still false - defer will call MarkFailed
 		return nil, fmt.Errorf("failed to create data set: %w", err)
@@ -316,18 +335,19 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 		return nil, err
 	}
 
-	// Estimate gas
-	auth.NoSend = true
-	tx, err := m.contract.AddPieces(auth, proofSetID, listenerAddr, pieceData, []byte{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to estimate gas for addPieces: %w", err)
+	if m.config.DefaultGasLimit == 0 {
+		// estimate gas
+		auth.NoSend = true
+		tx, err := m.contract.AddPieces(auth, proofSetID, listenerAddr, pieceData, []byte{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to estimate gas for addPieces: %w", err)
+		}
+		bufferMultiplier := 1.0 + (float64(m.config.GasBufferPercent) / 100.0)
+		auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
+		auth.NoSend = false
 	}
-	// Apply configurable gas buffer
-	bufferMultiplier := 1.0 + (float64(m.config.GasBufferPercent) / 100.0)
-	auth.GasLimit = uint64(float64(tx.Gas()) * bufferMultiplier)
-	auth.NoSend = false
 
-	tx, err = m.contract.AddPieces(auth, proofSetID, listenerAddr, pieceData, []byte{})
+	tx, err := m.contract.AddPieces(auth, proofSetID, listenerAddr, pieceData, []byte{})
 	if err != nil {
 		// txSent is still false - defer will call MarkFailed
 		return nil, fmt.Errorf("failed to add pieces: %w", err)
