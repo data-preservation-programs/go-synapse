@@ -15,8 +15,10 @@ type Network = constants.Network
 const (
 	NetworkMainnet     = constants.NetworkMainnet
 	NetworkCalibration = constants.NetworkCalibration
+	NetworkDevnet      = constants.NetworkDevnet
 	ChainIDMainnet     = constants.ChainIDMainnet
 	ChainIDCalibration = constants.ChainIDCalibration
+	ChainIDDevnet      = constants.ChainIDDevnet
 )
 
 var (
@@ -68,9 +70,10 @@ func NetworkFromChainID(chainID *big.Int) (Network, int64, error) {
 		return NetworkMainnet, id, nil
 	case ChainIDCalibration:
 		return NetworkCalibration, id, nil
+	case ChainIDDevnet:
+		return NetworkDevnet, id, nil
 	default:
-		return "", 0, fmt.Errorf("unsupported chain ID: %d (expected %d for mainnet or %d for calibration)",
-			id, ChainIDMainnet, ChainIDCalibration)
+		return "", 0, fmt.Errorf("unsupported chain ID: %d", id)
 	}
 }
 
