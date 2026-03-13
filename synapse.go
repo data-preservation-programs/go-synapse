@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/data-preservation-programs/go-synapse/constants"
+	"github.com/data-preservation-programs/go-synapse/costs"
 	"github.com/data-preservation-programs/go-synapse/pdp"
 	"github.com/data-preservation-programs/go-synapse/storage"
 	"github.com/data-preservation-programs/go-synapse/warmstorage"
@@ -39,6 +40,7 @@ type Client struct {
 	address            common.Address
 	warmStorageAddress common.Address
 	storageManager     *storage.Manager
+	costsService       *costs.Service
 	providerURL        string
 	dataSetID          int
 }
@@ -143,6 +145,42 @@ func (c *Client) Storage() (*storage.Manager, error) {
 	return c.storageManager, nil
 }
 
+
+// Costs returns a lazily-initialized costs service for computing storage
+// costs and deposit requirements.
+func (c *Client) Costs() (*costs.Service, error) {
+	if c.costsService != nil {
+		return c.costsService, nil
+	}
+
+	config, err := costs.NetworkConfig(constants.Network(c.network))
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve costs config: %w", err)
+	}
+
+	svc, err := costs.NewService(c.ethClient, c.chainID, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create costs service: %w", err)
+	}
+
+	c.costsService = svc
+	return c.costsService, nil
+}
+
+// GetUploadCosts is a convenience wrapper that computes the cost summary for
+// uploading data using the caller's address as payer.
+func (c *Client) GetUploadCosts(
+	ctx context.Context,
+	dataSetSizeBytes *big.Int,
+	uploadSizeBytes *big.Int,
+	opts *costs.UploadCostOptions,
+) (*costs.UploadCosts, error) {
+	svc, err := c.Costs()
+	if err != nil {
+		return nil, err
+	}
+	return svc.GetUploadCosts(ctx, c.address, dataSetSizeBytes, uploadSizeBytes, opts)
+}
 
 func (c *Client) Close() {
 	if c.ethClient != nil {
