@@ -9,4 +9,6 @@ const (
 	MaxUploadSize = GiB * 127 / 128
 
 	MinUploadSize = 127
+
+	BytesPerLeaf = 32
 )
