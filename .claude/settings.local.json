@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /var/home/arkadiy/archive_org/filecoin/go-synapse/*.go)",
+      "Bash(wc -l /var/home/arkadiy/archive_org/filecoin/go-synapse/pdp/*.go /var/home/arkadiy/archive_org/filecoin/go-synapse/storage/*.go)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(go test:*)",
+      "Bash(~/go/bin/golangci-lint run:*)"
+    ]
+  }
+}
