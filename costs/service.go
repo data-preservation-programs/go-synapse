@@ -16,6 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+var maxUint256 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+var halfMaxUint256 = new(big.Int).Rsh(maxUint256, 1)
+
 type Service struct {
 	ethClient        *ethclient.Client
 	chainID          int64
@@ -66,6 +69,25 @@ func (s *Service) GetServicePrice(ctx context.Context) (*warmstorage.ServicePric
 	return s.fwss.GetServicePrice(ctx)
 }
 
+// isFWSSMaxApproved checks all approval conditions matching synapse-sdk is-fwss-max-approved.ts:
+// approved, rateAllowance == maxUint256, lockupAllowance >= maxUint256/2, maxLockPeriod >= 30 days
+func isFWSSMaxApproved(approved bool, rateAllowance, lockAllowance, maxLockPeriod *big.Int) bool {
+	if !approved {
+		return false
+	}
+	if rateAllowance.Cmp(maxUint256) != 0 {
+		return false
+	}
+	// threshold, not exact -- contract decrements lockupAllowance on CDN payments
+	if lockAllowance.Cmp(halfMaxUint256) < 0 {
+		return false
+	}
+	if maxLockPeriod.Cmp(big.NewInt(DefaultLockupPeriod)) < 0 {
+		return false
+	}
+	return true
+}
+
 // GetUploadCosts computes costs for uploading uploadSizeBytes to a dataset
 // that currently holds dataSetSizeBytes (0 for new).
 func (s *Service) GetUploadCosts(
@@ -79,7 +101,7 @@ func (s *Service) GetUploadCosts(
 		opts = &UploadCostOptions{}
 	}
 	runwayEpochs := opts.RunwayEpochs
-	if runwayEpochs == 0 {
+	if runwayEpochs == 0 && DefaultRunwayEpochs > 0 {
 		runwayEpochs = DefaultRunwayEpochs
 	}
 	bufferEpochs := opts.BufferEpochs
@@ -88,23 +110,14 @@ func (s *Service) GetUploadCosts(
 	}
 
 	var (
-		pricing    *warmstorage.ServicePrice
-		acctFunds  *big.Int
-		acctLockup *big.Int
-		acctRate   *big.Int
-		acctSettle *big.Int
-
-		fundedUntil    *big.Int
-		currentFunds   *big.Int
+		pricing        *warmstorage.ServicePrice
 		availableFunds *big.Int
 		currentRate    *big.Int
 
-		approved       bool
-		rateAllowance  *big.Int
-		lockAllowance  *big.Int
-		rateUsed       *big.Int
-		lockUsed       *big.Int
-		maxLockPeriod  *big.Int
+		approved      bool
+		rateAllowance *big.Int
+		lockAllowance *big.Int
+		maxLockPeriod *big.Int
 
 		usdfcSybilFee *big.Int
 
@@ -129,27 +142,19 @@ func (s *Service) GetUploadCosts(
 
 	go func() {
 		defer wg.Done()
-		f, l, r, st, err := s.paymentsContract.Accounts(ctx, s.usdfcAddress, payer)
-		if err != nil {
-			mu.Lock()
-			errs = append(errs, fmt.Errorf("accounts: %w", err))
-			mu.Unlock()
-			return
-		}
-		fu, cf, af, cr, err2 := s.paymentsContract.GetAccountInfoIfSettled(ctx, s.usdfcAddress, payer)
+		_, _, af, cr, err := s.paymentsContract.GetAccountInfoIfSettled(ctx, s.usdfcAddress, payer)
 		mu.Lock()
 		defer mu.Unlock()
-		if err2 != nil {
-			errs = append(errs, fmt.Errorf("getAccountInfoIfSettled: %w", err2))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("getAccountInfoIfSettled: %w", err))
 			return
 		}
-		acctFunds, acctLockup, acctRate, acctSettle = f, l, r, st
-		fundedUntil, currentFunds, availableFunds, currentRate = fu, cf, af, cr
+		availableFunds, currentRate = af, cr
 	}()
 
 	go func() {
 		defer wg.Done()
-		a, ra, la, ru, lu, ml, err := s.paymentsContract.GetOperatorApproval(
+		a, ra, la, _, _, ml, err := s.paymentsContract.GetOperatorApproval(
 			ctx, s.usdfcAddress, payer, s.fwssAddress,
 		)
 		mu.Lock()
@@ -158,8 +163,7 @@ func (s *Service) GetUploadCosts(
 			errs = append(errs, fmt.Errorf("getOperatorApproval: %w", err))
 			return
 		}
-		approved, rateAllowance, lockAllowance = a, ra, la
-		rateUsed, lockUsed, maxLockPeriod = ru, lu, ml
+		approved, rateAllowance, lockAllowance, maxLockPeriod = a, ra, la, ml
 	}()
 
 	go func() {
@@ -179,17 +183,6 @@ func (s *Service) GetUploadCosts(
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("failed to fetch contract state: %w", errs[0])
 	}
-
-	_ = acctFunds
-	_ = acctLockup
-	_ = acctRate
-	_ = acctSettle
-	_ = fundedUntil
-	_ = currentFunds
-	_ = rateUsed
-	_ = lockUsed
-	_ = rateAllowance
-	_ = lockAllowance
 
 	totalSize := new(big.Int).Add(dataSetSizeBytes, uploadSizeBytes)
 	rate := CalculateEffectiveRate(
@@ -230,15 +223,73 @@ func (s *Service) GetUploadCosts(
 		opts.IsNewDataSet,
 	)
 
-	needsApproval := !approved || maxLockPeriod.Cmp(big.NewInt(DefaultLockupPeriod)) < 0
-
+	needsApproval := !isFWSSMaxApproved(approved, rateAllowance, lockAllowance, maxLockPeriod)
 	ready := depositNeeded.Sign() == 0 && !needsApproval
 
 	return &UploadCosts{
 		Rate:                 rate,
+		Lockup:               lockup,
 		DepositNeeded:        depositNeeded,
 		NeedsFWSSMaxApproval: needsApproval,
 		Ready:                ready,
+	}, nil
+}
+
+// GetAccountSummary returns the account health snapshot for the given address.
+func (s *Service) GetAccountSummary(ctx context.Context, owner common.Address) (*AccountSummary, error) {
+	var (
+		fundedUntil    *big.Int
+		currentFunds   *big.Int
+		availableFunds *big.Int
+		currentRate    *big.Int
+
+		mu   sync.Mutex
+		errs []error
+		wg   sync.WaitGroup
+	)
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		fu, cf, af, cr, err := s.paymentsContract.GetAccountInfoIfSettled(ctx, s.usdfcAddress, owner)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("getAccountInfoIfSettled: %w", err))
+			return
+		}
+		fundedUntil, currentFunds, availableFunds, currentRate = fu, cf, af, cr
+	}()
+
+	wg.Wait()
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("failed to fetch account state: %w", errs[0])
+	}
+
+	debt := new(big.Int)
+	if availableFunds.Sign() < 0 {
+		debt.Neg(availableFunds)
+	}
+
+	funds := new(big.Int)
+	if currentFunds.Sign() > 0 {
+		funds.Set(currentFunds)
+	}
+
+	ratePerMonth := new(big.Int).Mul(currentRate, big.NewInt(constants.EpochsPerMonth))
+
+	currentEpoch := constants.CurrentEpoch(s.chainID)
+
+	return &AccountSummary{
+		Funds:              funds,
+		AvailableFunds:     availableFunds,
+		Debt:               debt,
+		LockupRatePerEpoch: currentRate,
+		LockupRatePerMonth: ratePerMonth,
+		FundedUntilEpoch:   fundedUntil,
+		CurrentEpoch:       currentEpoch,
 	}, nil
 }
 

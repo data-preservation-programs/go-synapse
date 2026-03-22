@@ -81,20 +81,27 @@ func CalculateAdditionalLockupRequired(
 		}
 	}
 
-	totalLockup := new(big.Int).Mul(rateDelta, big.NewInt(lockupPeriod))
+	rateLockup := new(big.Int).Mul(rateDelta, big.NewInt(lockupPeriod))
 
+	cdnLockup := new(big.Int)
 	if isNewDataSet && enableCDN {
-		totalLockup.Add(totalLockup, CDNFixedLockup)
-		totalLockup.Add(totalLockup, CacheMissFixedLockup)
+		cdnLockup.Set(CDNFixedLockup)
 	}
 
+	sybilFee := new(big.Int)
 	if isNewDataSet && usdfcSybilFee != nil {
-		totalLockup.Add(totalLockup, usdfcSybilFee)
+		sybilFee.Set(usdfcSybilFee)
 	}
+
+	totalLockup := new(big.Int).Add(rateLockup, cdnLockup)
+	totalLockup.Add(totalLockup, sybilFee)
 
 	return AdditionalLockup{
-		RateDelta:   rateDelta,
-		TotalLockup: totalLockup,
+		RateDelta:      rateDelta,
+		RateLockup:     rateLockup,
+		CDNFixedLockup: cdnLockup,
+		SybilFee:       sybilFee,
+		TotalLockup:    totalLockup,
 	}
 }
 

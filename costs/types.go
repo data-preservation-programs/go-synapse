@@ -10,20 +10,34 @@ type EffectiveRate struct {
 }
 
 type AdditionalLockup struct {
-	RateDelta   *big.Int
-	TotalLockup *big.Int
+	RateDelta      *big.Int
+	RateLockup     *big.Int // rateDelta * lockupPeriod
+	CDNFixedLockup *big.Int // 1.0 USDFC for new CDN datasets, 0 otherwise
+	SybilFee       *big.Int // sybil fee for new datasets, 0 otherwise
+	TotalLockup    *big.Int // sum of all components
 }
 
 type UploadCosts struct {
 	Rate                 EffectiveRate
+	Lockup               AdditionalLockup
 	DepositNeeded        *big.Int
 	NeedsFWSSMaxApproval bool
 	Ready                bool
 }
 
 type UploadCostOptions struct {
-	RunwayEpochs int64 // defaults to DefaultRunwayEpochs (3 months)
-	BufferEpochs int64 // defaults to DefaultBufferEpochs (1 month)
+	RunwayEpochs int64 // defaults to DefaultRunwayEpochs (0)
+	BufferEpochs int64 // defaults to DefaultBufferEpochs (5 epochs)
 	EnableCDN    bool
 	IsNewDataSet bool
+}
+
+type AccountSummary struct {
+	Funds              *big.Int
+	AvailableFunds     *big.Int
+	Debt               *big.Int
+	LockupRatePerEpoch *big.Int
+	LockupRatePerMonth *big.Int
+	FundedUntilEpoch   *big.Int
+	CurrentEpoch       *big.Int
 }

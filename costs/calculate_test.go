@@ -156,14 +156,24 @@ func TestAdditionalLockup_NewDataSet_WithCDN(t *testing.T) {
 		true, // CDN enabled
 	)
 
-	// Should include CDN + CacheMiss + sybil fee
+	// Should include CDN fixed lockup + sybil fee
 	rateLockup := new(big.Int).Mul(lockup.RateDelta, bi(DefaultLockupPeriod))
 	expected := new(big.Int).Add(rateLockup, CDNFixedLockup)
-	expected.Add(expected, CacheMissFixedLockup)
 	expected.Add(expected, sybilFee)
 
 	if lockup.TotalLockup.Cmp(expected) != 0 {
 		t.Errorf("totalLockup with CDN: got %s, want %s", lockup.TotalLockup, expected)
+	}
+
+	// verify component breakdown
+	if lockup.RateLockup.Cmp(rateLockup) != 0 {
+		t.Errorf("RateLockup: got %s, want %s", lockup.RateLockup, rateLockup)
+	}
+	if lockup.CDNFixedLockup.Cmp(CDNFixedLockup) != 0 {
+		t.Errorf("CDNFixedLockup: got %s, want %s", lockup.CDNFixedLockup, CDNFixedLockup)
+	}
+	if lockup.SybilFee.Cmp(sybilFee) != 0 {
+		t.Errorf("SybilFee: got %s, want %s", lockup.SybilFee, sybilFee)
 	}
 }
 
@@ -235,7 +245,7 @@ func TestDepositNeeded_InsufficientFunds(t *testing.T) {
 }
 
 func TestDepositNeeded_SufficientFunds(t *testing.T) {
-	// Give a massive amount of available funds
+	// give a massive amount of available funds
 	huge := new(big.Int).Mul(usdfc(1000000), bi(1e18))
 	deposit := CalculateDepositNeeded(
 		usdfc(1),  // small lockup
@@ -248,14 +258,13 @@ func TestDepositNeeded_SufficientFunds(t *testing.T) {
 		false,
 	)
 
-	// Buffer is still added even when raw deposit is 0
-	// But the raw part should be clamped to 0
-	// deposit = max(raw, 0) + buffer
-	// raw = 1e18 + 2*259200 - huge + 0 → negative → 0
-	// buffer = 2 * 86400 = positive
-	// So deposit > 0 due to buffer
-	if deposit.Sign() < 0 {
-		t.Errorf("deposit should not be negative: got %s", deposit)
+	// raw = lockup + runway - available + debt → negative → clamped to 0
+	// buffer = (1+1) * 5 = 10
+	// deposit = 0 + 10 = 10
+	expectedBuffer := new(big.Int).Mul(bi(2), bi(DefaultBufferEpochs))
+	if deposit.Cmp(expectedBuffer) != 0 {
+		t.Errorf("deposit should equal buffer when funds are sufficient: got %s, want %s",
+			deposit, expectedBuffer)
 	}
 }
 
@@ -298,9 +307,9 @@ func TestDepositNeeded_BufferSkipped_NewDataSet_ZeroRate(t *testing.T) {
 		false, // existing → buffer applied
 	)
 
-	// For new dataset with zero current rate, buffer is skipped.
-	// For existing, buffer = bufferEpochs * (0 + 100) = 86400 * 100
-	// So depositExisting should be larger.
+	// for new dataset with zero current rate, buffer is skipped.
+	// for existing, buffer = bufferEpochs * (0 + 100) = 5 * 100 = 500
+	// so depositExisting should be larger.
 	if depositNew.Cmp(depositExisting) >= 0 {
 		t.Errorf("new dataset with zero rate should skip buffer and be smaller: new=%s, existing=%s",
 			depositNew, depositExisting)
