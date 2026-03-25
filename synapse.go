@@ -68,6 +68,20 @@ func New(ctx context.Context, opts Options) (*Client, error) {
 		warmStorageAddr = WarmStorageAddresses[network]
 	}
 
+	// for networks without static addresses (e.g. devnet), resolve from FWSS at runtime
+	if _, ok := constants.PDPVerifierAddresses[constants.Network(network)]; !ok {
+		if warmStorageAddr == (common.Address{}) {
+			ethClient.Close()
+			return nil, fmt.Errorf("network %s has no built-in addresses; set WarmStorageAddress (FWSS) to resolve at runtime", network)
+		}
+		addrs, err := constants.ResolveFromFWSS(ctx, ethClient, warmStorageAddr)
+		if err != nil {
+			ethClient.Close()
+			return nil, fmt.Errorf("failed to resolve addresses from FWSS on %s: %w", network, err)
+		}
+		constants.RegisterNetwork(constants.Network(network), addrs)
+	}
+
 	address := crypto.PubkeyToAddress(opts.PrivateKey.PublicKey)
 
 	client := &Client{
