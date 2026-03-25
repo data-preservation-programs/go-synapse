@@ -326,3 +326,111 @@ func TestDepositNeeded_ZeroEverything(t *testing.T) {
 		t.Errorf("deposit should be zero when all inputs are zero: got %s", deposit)
 	}
 }
+
+// --- isFWSSMaxApproved ---
+
+func TestIsFWSSMaxApproved_AllConditionsMet(t *testing.T) {
+	ok := isFWSSMaxApproved(true, maxUint256, maxUint256, bi(DefaultLockupPeriod))
+	if !ok {
+		t.Error("should be approved when all conditions met")
+	}
+}
+
+func TestIsFWSSMaxApproved_NotApproved(t *testing.T) {
+	ok := isFWSSMaxApproved(false, maxUint256, maxUint256, bi(DefaultLockupPeriod))
+	if ok {
+		t.Error("should not be approved when approved=false")
+	}
+}
+
+func TestIsFWSSMaxApproved_RateAllowanceTooLow(t *testing.T) {
+	lowRate := new(big.Int).Sub(maxUint256, bi(1))
+	ok := isFWSSMaxApproved(true, lowRate, maxUint256, bi(DefaultLockupPeriod))
+	if ok {
+		t.Error("should not be approved when rateAllowance < maxUint256")
+	}
+}
+
+func TestIsFWSSMaxApproved_LockAllowanceAtThreshold(t *testing.T) {
+	// exactly at threshold -- should pass
+	ok := isFWSSMaxApproved(true, maxUint256, halfMaxUint256, bi(DefaultLockupPeriod))
+	if !ok {
+		t.Error("should be approved at lockAllowance == maxUint256/2")
+	}
+}
+
+func TestIsFWSSMaxApproved_LockAllowanceBelowThreshold(t *testing.T) {
+	belowHalf := new(big.Int).Sub(halfMaxUint256, bi(1))
+	ok := isFWSSMaxApproved(true, maxUint256, belowHalf, bi(DefaultLockupPeriod))
+	if ok {
+		t.Error("should not be approved when lockAllowance < maxUint256/2")
+	}
+}
+
+func TestIsFWSSMaxApproved_MaxLockPeriodTooShort(t *testing.T) {
+	ok := isFWSSMaxApproved(true, maxUint256, maxUint256, bi(DefaultLockupPeriod-1))
+	if ok {
+		t.Error("should not be approved when maxLockPeriod < DefaultLockupPeriod")
+	}
+}
+
+// --- AdditionalLockup breakdown ---
+
+func TestAdditionalLockup_Breakdown_ExistingDataSet(t *testing.T) {
+	pricing := defaultPricing()
+	sybilFee := usdfcFrac(1)
+
+	lockup := CalculateAdditionalLockupRequired(
+		bi(constants.TiB),
+		bi(constants.TiB),
+		pricing,
+		DefaultLockupPeriod,
+		sybilFee,
+		false, // existing
+		true,  // CDN
+	)
+
+	// existing dataset: no CDN lockup, no sybil fee
+	if lockup.CDNFixedLockup.Sign() != 0 {
+		t.Errorf("CDNFixedLockup should be 0 for existing dataset: got %s", lockup.CDNFixedLockup)
+	}
+	if lockup.SybilFee.Sign() != 0 {
+		t.Errorf("SybilFee should be 0 for existing dataset: got %s", lockup.SybilFee)
+	}
+
+	// total = rateLockup only
+	if lockup.TotalLockup.Cmp(lockup.RateLockup) != 0 {
+		t.Errorf("TotalLockup should equal RateLockup for existing dataset: total=%s, rate=%s",
+			lockup.TotalLockup, lockup.RateLockup)
+	}
+}
+
+func TestAdditionalLockup_Breakdown_SumsCorrectly(t *testing.T) {
+	pricing := defaultPricing()
+	sybilFee := usdfcFrac(1)
+
+	lockup := CalculateAdditionalLockupRequired(
+		bi(constants.TiB),
+		bi(0),
+		pricing,
+		DefaultLockupPeriod,
+		sybilFee,
+		true, // new dataset
+		true, // CDN
+	)
+
+	// verify total = rateLockup + cdnFixedLockup + sybilFee
+	expected := new(big.Int).Add(lockup.RateLockup, lockup.CDNFixedLockup)
+	expected.Add(expected, lockup.SybilFee)
+	if lockup.TotalLockup.Cmp(expected) != 0 {
+		t.Errorf("TotalLockup != sum of components: total=%s, sum=%s",
+			lockup.TotalLockup, expected)
+	}
+
+	// verify rateLockup = rateDelta * lockupPeriod
+	expectedRate := new(big.Int).Mul(lockup.RateDelta, bi(DefaultLockupPeriod))
+	if lockup.RateLockup.Cmp(expectedRate) != 0 {
+		t.Errorf("RateLockup != rateDelta * lockupPeriod: got %s, want %s",
+			lockup.RateLockup, expectedRate)
+	}
+}
