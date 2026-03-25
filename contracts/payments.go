@@ -354,13 +354,45 @@ func (p *PaymentsContract) GetRail(ctx context.Context, railId *big.Int) (*RailV
 		return nil, fmt.Errorf("getRail call failed: %w", err)
 	}
 
-	var rail RailViewResult
-	err = p.abi.UnpackIntoInterface(&rail, "getRail", result)
+	values, err := p.abi.Unpack("getRail", result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unpack getRail result: %w", err)
 	}
+	if len(values) != 1 {
+		return nil, fmt.Errorf("unexpected getRail result length: %d", len(values))
+	}
+	rawRail, ok := values[0].(struct {
+		Token               common.Address `json:"token"`
+		From                common.Address `json:"from"`
+		To                  common.Address `json:"to"`
+		Operator            common.Address `json:"operator"`
+		Validator           common.Address `json:"validator"`
+		PaymentRate         *big.Int       `json:"paymentRate"`
+		LockupPeriod        *big.Int       `json:"lockupPeriod"`
+		LockupFixed         *big.Int       `json:"lockupFixed"`
+		SettledUpTo         *big.Int       `json:"settledUpTo"`
+		EndEpoch            *big.Int       `json:"endEpoch"`
+		CommissionRateBps   *big.Int       `json:"commissionRateBps"`
+		ServiceFeeRecipient common.Address `json:"serviceFeeRecipient"`
+	})
+	if !ok {
+		return nil, fmt.Errorf("unexpected getRail tuple type: %T", values[0])
+	}
 
-	return &rail, nil
+	return &RailViewResult{
+		Token:               rawRail.Token,
+		From:                rawRail.From,
+		To:                  rawRail.To,
+		Operator:            rawRail.Operator,
+		Validator:           rawRail.Validator,
+		PaymentRate:         rawRail.PaymentRate,
+		LockupPeriod:        rawRail.LockupPeriod,
+		LockupFixed:         rawRail.LockupFixed,
+		SettledUpTo:         rawRail.SettledUpTo,
+		EndEpoch:            rawRail.EndEpoch,
+		CommissionRateBps:   rawRail.CommissionRateBps,
+		ServiceFeeRecipient: rawRail.ServiceFeeRecipient,
+	}, nil
 }
 
 
