@@ -62,6 +62,31 @@ func TestSecp256k1Signer_DualProtocol(t *testing.T) {
 	if opts.From != expectedEth {
 		t.Errorf("Transactor.From = %s, want %s", opts.From, expectedEth)
 	}
+
+	// SignDigest should produce a 65-byte signature recoverable to the same address
+	digest := ethcrypto.Keccak256([]byte("test digest input"))
+	sigBytes, err := s.SignDigest(digest)
+	if err != nil {
+		t.Fatalf("SignDigest: %v", err)
+	}
+	if len(sigBytes) != 65 {
+		t.Errorf("SignDigest length = %d, want 65", len(sigBytes))
+	}
+	if sigBytes[64] != 0 && sigBytes[64] != 1 {
+		t.Errorf("SignDigest V = %d, want 0 or 1", sigBytes[64])
+	}
+	recovered, err := ethcrypto.SigToPub(digest, sigBytes)
+	if err != nil {
+		t.Fatalf("SigToPub: %v", err)
+	}
+	if ethcrypto.PubkeyToAddress(*recovered) != expectedEth {
+		t.Errorf("recovered address %s != signer %s", ethcrypto.PubkeyToAddress(*recovered), expectedEth)
+	}
+
+	// SignDigest rejects non-32-byte input
+	if _, err := s.SignDigest([]byte("short")); err == nil {
+		t.Error("SignDigest should reject non-32-byte input")
+	}
 }
 
 func TestSecp256k1Signer_FromLotusExport(t *testing.T) {

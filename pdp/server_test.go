@@ -23,7 +23,7 @@ func testAuthHelper(t *testing.T) *AuthHelper {
 	contractAddr := common.HexToAddress("0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f")
 	chainID := big.NewInt(31337)
 
-	return NewAuthHelper(privateKey, contractAddr, chainID)
+	return NewAuthHelperFromKey(privateKey, contractAddr, chainID)
 }
 
 func setupMockServer(t *testing.T, handler http.Handler) (*Server, *httptest.Server) {

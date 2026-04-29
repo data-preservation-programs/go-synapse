@@ -13,15 +13,15 @@ import (
 
 	blake2b "github.com/minio/blake2b-simd"
 
-	dcrdecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	dcrdsecp "github.com/decred/dcrd/dcrec/secp256k1/v4"
+	dcrdecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
 // Secp256k1Signer implements EVMSigner backed by a secp256k1 private key.
 // It can sign both Filecoin messages and Ethereum transactions.
 type Secp256k1Signer struct {
 	// redundant with ecdsaKey.D but kept for simplicity; unexported, can be changed later
-	raw     []byte          // raw 32-byte scalar
+	raw      []byte // raw 32-byte scalar
 	ecdsaKey *ecdsa.PrivateKey
 	filAddr  address.Address
 	ethAddr  common.Address
@@ -117,4 +117,14 @@ func (s *Secp256k1Signer) EVMAddress() common.Address {
 // Transactor returns bind.TransactOpts for signing Ethereum/FEVM transactions.
 func (s *Secp256k1Signer) Transactor(chainID *big.Int) (*bind.TransactOpts, error) {
 	return bind.NewKeyedTransactorWithChainID(s.ecdsaKey, chainID)
+}
+
+// SignDigest produces a 65-byte recoverable secp256k1 signature over the
+// given 32-byte keccak digest. V is the recovery ID (0 or 1); callers
+// requiring the historical Ethereum 27/28 form must add 27 themselves.
+func (s *Secp256k1Signer) SignDigest(digest []byte) ([]byte, error) {
+	if len(digest) != 32 {
+		return nil, fmt.Errorf("digest must be 32 bytes, got %d", len(digest))
+	}
+	return ethcrypto.Sign(digest, s.ecdsaKey)
 }

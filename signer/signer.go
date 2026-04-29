@@ -24,9 +24,17 @@ type Signer interface {
 	Sign(msg []byte) (*crypto.Signature, error)
 }
 
-// EVMSigner signs Ethereum/FEVM transactions. Only secp256k1 keys can do this.
+// EVMSigner signs Ethereum/FEVM transactions and EIP-712 typed data.
+// Only secp256k1 keys can do this.
+//
+// SignDigest produces a 65-byte recoverable secp256k1 signature over a
+// 32-byte keccak digest, in [R || S || V] form with V = 0 or 1 (the
+// go-ethereum crypto.Sign convention). Callers that need on-chain
+// ECDSA recovery (e.g. PDP extraData) must normalize V to 27/28
+// themselves; the digest-signer interface keeps the raw recovery ID.
 type EVMSigner interface {
 	Signer
 	EVMAddress() common.Address
 	Transactor(chainID *big.Int) (*bind.TransactOpts, error)
+	SignDigest(digest []byte) ([]byte, error)
 }
