@@ -12,19 +12,32 @@ import (
 	"github.com/ipfs/go-cid"
 )
 
+// SignDigestFunc signs a 32-byte keccak digest and returns a 65-byte
+// recoverable secp256k1 signature in [R || S || V] form, where V is the
+// recovery ID (0 or 1). AuthHelper normalizes V to 27/28 internally
+// before producing the AuthSignature for on-chain consumption.
+type SignDigestFunc func(digest []byte) ([]byte, error)
+
+// AuthHelper signs PDP extraData blobs (CreateDataSet, AddPieces, etc.)
+// against the FWSS EIP-712 domain. It does not hold a key directly:
+// callers supply a SignDigestFunc, which lets the EVMSigner abstraction
+// (or an HSM, remote signer, etc.) own the key material.
 type AuthHelper struct {
-	privateKey         *ecdsa.PrivateKey
+	signDigest         SignDigestFunc
 	address            common.Address
 	warmStorageAddress common.Address
 	chainID            *big.Int
 	domain             apitypes.TypedDataDomain
 }
 
-func NewAuthHelper(privateKey *ecdsa.PrivateKey, warmStorageAddr common.Address, chainID *big.Int) *AuthHelper {
-	address := crypto.PubkeyToAddress(privateKey.PublicKey)
-
+// NewAuthHelper builds an AuthHelper bound to the given signer, payer
+// address, FWSS contract address, and chainID. The address is the
+// recovered signer of every signature this helper produces; passing a
+// mismatched (signDigest, address) pair results in signatures that
+// FWSS will reject at eth_call time.
+func NewAuthHelper(signDigest SignDigestFunc, address common.Address, warmStorageAddr common.Address, chainID *big.Int) *AuthHelper {
 	return &AuthHelper{
-		privateKey:         privateKey,
+		signDigest:         signDigest,
 		address:            address,
 		warmStorageAddress: warmStorageAddr,
 		chainID:            chainID,
@@ -35,6 +48,17 @@ func NewAuthHelper(privateKey *ecdsa.PrivateKey, warmStorageAddr common.Address,
 			VerifyingContract: warmStorageAddr.Hex(),
 		},
 	}
+}
+
+// NewAuthHelperFromKey is a convenience for callers that hold a raw
+// secp256k1 key (test fixtures, scripts, examples). Production code
+// should plumb through an EVMSigner and use NewAuthHelper directly.
+func NewAuthHelperFromKey(privateKey *ecdsa.PrivateKey, warmStorageAddr common.Address, chainID *big.Int) *AuthHelper {
+	address := crypto.PubkeyToAddress(privateKey.PublicKey)
+	signDigest := func(digest []byte) ([]byte, error) {
+		return crypto.Sign(digest, privateKey)
+	}
+	return NewAuthHelper(signDigest, address, warmStorageAddr, chainID)
 }
 
 func (a *AuthHelper) Address() common.Address {
@@ -185,9 +209,12 @@ func (a *AuthHelper) signTypedData(primaryType string, message apitypes.TypedDat
 	rawData = append(rawData, messageHash...)
 	signedData := crypto.Keccak256Hash(rawData)
 
-	signature, err := crypto.Sign(signedData.Bytes(), a.privateKey)
+	signature, err := a.signDigest(signedData.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign: %w", err)
+	}
+	if len(signature) != 65 {
+		return nil, fmt.Errorf("signer returned %d bytes, expected 65", len(signature))
 	}
 
 	if signature[64] < 27 {

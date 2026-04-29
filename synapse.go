@@ -124,7 +124,7 @@ func (c *Client) Storage() (*storage.Manager, error) {
 		return nil, fmt.Errorf("provider URL is required for storage operations")
 	}
 
-	authHelper := pdp.NewAuthHelper(c.privateKey, c.warmStorageAddress, big.NewInt(c.chainID))
+	authHelper := pdp.NewAuthHelperFromKey(c.privateKey, c.warmStorageAddress, big.NewInt(c.chainID))
 	pdpServer := pdp.NewServer(c.providerURL)
 
 	var opts []storage.ManagerOption
@@ -192,7 +192,7 @@ func (c *Client) Close() {
 }
 
 func (c *Client) NewAuthHelper() *pdp.AuthHelper {
-	return pdp.NewAuthHelper(c.privateKey, c.warmStorageAddress, big.NewInt(c.chainID))
+	return pdp.NewAuthHelperFromKey(c.privateKey, c.warmStorageAddress, big.NewInt(c.chainID))
 }
 
 func (c *Client) NewPDPServer(providerURL string) *pdp.Server {

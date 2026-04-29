@@ -135,7 +135,7 @@ func setupAuthHelper(t *testing.T) *AuthHelper {
 	contractAddr := common.HexToAddress(fixtures.ContractAddress)
 	chainID := big.NewInt(fixtures.ChainID)
 
-	return NewAuthHelper(privateKey, contractAddr, chainID)
+	return NewAuthHelperFromKey(privateKey, contractAddr, chainID)
 }
 
 func TestAuthHelper_SignCreateDataSet(t *testing.T) {
@@ -359,5 +359,65 @@ func TestAuthHelper_Address(t *testing.T) {
 	expectedAddr := common.HexToAddress(fixtures.SignerAddress)
 	if authHelper.Address() != expectedAddr {
 		t.Errorf("Address() returned %s, expected %s", authHelper.Address().Hex(), expectedAddr.Hex())
+	}
+}
+
+// TestAuthHelper_SignDigestFunc verifies that NewAuthHelper accepts a
+// SignDigestFunc and produces signatures that match the from-key path
+// byte-for-byte (locks in the contract that the function-based
+// constructor is just a thin wrapper).
+func TestAuthHelper_SignDigestFunc(t *testing.T) {
+	privateKeyBytes, _ := hex.DecodeString(fixtures.PrivateKey)
+	privateKey, _ := crypto.ToECDSA(privateKeyBytes)
+	address := crypto.PubkeyToAddress(privateKey.PublicKey)
+	contractAddr := common.HexToAddress(fixtures.ContractAddress)
+	chainID := big.NewInt(fixtures.ChainID)
+
+	signFn := func(digest []byte) ([]byte, error) {
+		return crypto.Sign(digest, privateKey)
+	}
+
+	helperFromFn := NewAuthHelper(signFn, address, contractAddr, chainID)
+	helperFromKey := NewAuthHelperFromKey(privateKey, contractAddr, chainID)
+
+	clientDataSetID := big.NewInt(fixtures.Signatures.CreateDataSet.ClientDataSetID)
+	payee := common.HexToAddress(fixtures.Signatures.CreateDataSet.Payee)
+
+	sigA, err := helperFromFn.SignCreateDataSet(clientDataSetID, payee, fixtures.Signatures.CreateDataSet.Metadata)
+	if err != nil {
+		t.Fatalf("SignCreateDataSet (fn): %v", err)
+	}
+	sigB, err := helperFromKey.SignCreateDataSet(clientDataSetID, payee, fixtures.Signatures.CreateDataSet.Metadata)
+	if err != nil {
+		t.Fatalf("SignCreateDataSet (key): %v", err)
+	}
+
+	if hex.EncodeToString(sigA.Signature) != hex.EncodeToString(sigB.Signature) {
+		t.Errorf("SignDigestFunc and FromKey paths produced different signatures:\n fn:  %x\n key: %x",
+			sigA.Signature, sigB.Signature)
+	}
+	if helperFromFn.Address() != address {
+		t.Errorf("Address mismatch: helper=%s want=%s", helperFromFn.Address().Hex(), address.Hex())
+	}
+}
+
+// TestAuthHelper_RejectsBadSignerOutput verifies the length check in
+// signTypedData when the SignDigestFunc misbehaves.
+func TestAuthHelper_RejectsBadSignerOutput(t *testing.T) {
+	contractAddr := common.HexToAddress(fixtures.ContractAddress)
+	chainID := big.NewInt(fixtures.ChainID)
+	dummyAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+
+	badSignFn := func(digest []byte) ([]byte, error) {
+		return []byte{0x00, 0x01, 0x02}, nil // wrong length
+	}
+
+	helper := NewAuthHelper(badSignFn, dummyAddr, contractAddr, chainID)
+	_, err := helper.SignCreateDataSet(big.NewInt(1), dummyAddr, nil)
+	if err == nil {
+		t.Error("expected error from short signer output, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected 65") {
+		t.Errorf("error did not mention expected length: %v", err)
 	}
 }
