@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ipfs/go-cid"
 )
 
 func testAuthHelper(t *testing.T) *AuthHelper {
@@ -163,6 +164,102 @@ func TestServer_CreateDataSet(t *testing.T) {
 			t.Error("Expected error for server error, got nil")
 		}
 	})
+}
+
+func TestServer_CreateDataSetAndAddPieces(t *testing.T) {
+	pieceCID := mustCID(t, "baga6ea4seaqao7s73y24kcutaosvacpdjgfe5pw76ooefnyqw4ynr3d2y6x2mpq")
+	recordKeeper := "0x02925630df557F957f70E112bA06e50965417CA0"
+	extraData := "0xdeadbeef"
+
+	t.Run("successful creation", func(t *testing.T) {
+		expectedTxHash := "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+		var seen CreateAndAddRequest
+
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != "POST" {
+				t.Errorf("Expected POST, got %s", r.Method)
+			}
+			if r.URL.Path != "/pdp/data-sets/create-and-add" {
+				t.Errorf("Expected path /pdp/data-sets/create-and-add, got %s", r.URL.Path)
+			}
+			body, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(body, &seen); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			w.Header().Set("Location", "/pdp/data-sets/created/"+expectedTxHash)
+			w.WriteHeader(http.StatusCreated)
+		}))
+
+		result, err := server.CreateDataSetAndAddPieces(
+			context.Background(),
+			recordKeeper,
+			[]cid.Cid{pieceCID},
+			extraData,
+		)
+		if err != nil {
+			t.Fatalf("CreateDataSetAndAddPieces failed: %v", err)
+		}
+		if result.TxHash != expectedTxHash {
+			t.Errorf("TxHash = %s, want %s", result.TxHash, expectedTxHash)
+		}
+		if seen.RecordKeeper != recordKeeper {
+			t.Errorf("RecordKeeper = %s, want %s", seen.RecordKeeper, recordKeeper)
+		}
+		if seen.ExtraData != extraData {
+			t.Errorf("ExtraData = %s, want %s", seen.ExtraData, extraData)
+		}
+		if len(seen.Pieces) != 1 {
+			t.Fatalf("len(Pieces) = %d, want 1", len(seen.Pieces))
+		}
+		if seen.Pieces[0].PieceCID != pieceCID.String() {
+			t.Errorf("Pieces[0].PieceCID = %s, want %s", seen.Pieces[0].PieceCID, pieceCID.String())
+		}
+		if len(seen.Pieces[0].SubPieces) != 1 || seen.Pieces[0].SubPieces[0].SubPieceCID != pieceCID.String() {
+			t.Errorf("Pieces[0].SubPieces shape mismatch: %+v", seen.Pieces[0].SubPieces)
+		}
+	})
+
+	t.Run("missing Location header", func(t *testing.T) {
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+		}))
+
+		_, err := server.CreateDataSetAndAddPieces(
+			context.Background(),
+			recordKeeper,
+			[]cid.Cid{pieceCID},
+			extraData,
+		)
+		if err == nil {
+			t.Error("Expected error for missing Location header, got nil")
+		}
+	})
+
+	t.Run("server error is surfaced", func(t *testing.T) {
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("extraData validation failed"))
+		}))
+
+		_, err := server.CreateDataSetAndAddPieces(
+			context.Background(),
+			recordKeeper,
+			[]cid.Cid{pieceCID},
+			extraData,
+		)
+		if err == nil {
+			t.Error("Expected error for 400 response, got nil")
+		}
+	})
+}
+
+func mustCID(t *testing.T, s string) cid.Cid {
+	t.Helper()
+	c, err := cid.Decode(s)
+	if err != nil {
+		t.Fatalf("decode CID %q: %v", s, err)
+	}
+	return c
 }
 
 func TestServer_GetDataSetCreationStatus(t *testing.T) {
