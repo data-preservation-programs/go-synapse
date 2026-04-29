@@ -3,10 +3,14 @@ package pdp
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -243,6 +247,170 @@ func TestServer_GetDataSet(t *testing.T) {
 		_, err := server.GetDataSet(context.Background(), 999)
 		if err == nil {
 			t.Error("Expected error for not found, got nil")
+		}
+	})
+}
+
+func TestServer_PullPieces(t *testing.T) {
+	pieces := []PullPieceInput{
+		{PieceCID: "bafkz...A", SourceURL: "https://example.com/piece/bafkz...A"},
+		{PieceCID: "bafkz...B", SourceURL: "https://example.com/piece/bafkz...B"},
+	}
+	recordKeeper := "0x02925630df557F957f70E112bA06e50965417CA0"
+	extraData := "0xdeadbeef"
+
+	t.Run("create-new omits dataSetId on the wire", func(t *testing.T) {
+		var seen PullPiecesRequest
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != "POST" {
+				t.Errorf("Expected POST, got %s", r.Method)
+			}
+			if r.URL.Path != "/pdp/piece/pull" {
+				t.Errorf("Expected path /pdp/piece/pull, got %s", r.URL.Path)
+			}
+			body, _ := io.ReadAll(r.Body)
+			// re-decode into a map to assert dataSetId truly absent
+			var raw map[string]any
+			if err := json.Unmarshal(body, &raw); err != nil {
+				t.Fatalf("decode raw body: %v", err)
+			}
+			if _, present := raw["dataSetId"]; present {
+				t.Errorf("expected dataSetId omitted for new set, body=%s", string(body))
+			}
+			if err := json.Unmarshal(body, &seen); err != nil {
+				t.Fatalf("decode typed body: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"pending","pieces":[{"pieceCid":"bafkz...A","status":"pending"},{"pieceCid":"bafkz...B","status":"pending"}]}`))
+		}))
+
+		resp, err := server.PullPieces(context.Background(), PullPiecesOptions{
+			RecordKeeper: recordKeeper,
+			Pieces:       pieces,
+			ExtraData:    extraData,
+			DataSetID:    0,
+		})
+		if err != nil {
+			t.Fatalf("PullPieces failed: %v", err)
+		}
+		if resp.Status != PullStatusPending {
+			t.Errorf("Status = %s, want pending", resp.Status)
+		}
+		if len(resp.Pieces) != 2 {
+			t.Errorf("len(Pieces) = %d, want 2", len(resp.Pieces))
+		}
+		if seen.RecordKeeper != recordKeeper {
+			t.Errorf("RecordKeeper = %s, want %s", seen.RecordKeeper, recordKeeper)
+		}
+		if seen.ExtraData != extraData {
+			t.Errorf("ExtraData = %s, want %s", seen.ExtraData, extraData)
+		}
+		if len(seen.Pieces) != 2 || seen.Pieces[0].PieceCID != pieces[0].PieceCID {
+			t.Errorf("Pieces mismatch: %+v", seen.Pieces)
+		}
+	})
+
+	t.Run("existing set sends dataSetId on the wire", func(t *testing.T) {
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var raw map[string]any
+			if err := json.Unmarshal(body, &raw); err != nil {
+				t.Fatalf("decode raw body: %v", err)
+			}
+			id, ok := raw["dataSetId"].(float64)
+			if !ok {
+				t.Errorf("expected numeric dataSetId, body=%s", string(body))
+			}
+			if uint64(id) != 13245 {
+				t.Errorf("dataSetId = %v, want 13245", id)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"complete","pieces":[{"pieceCid":"bafkz...A","status":"complete"}]}`))
+		}))
+
+		resp, err := server.PullPieces(context.Background(), PullPiecesOptions{
+			RecordKeeper: recordKeeper,
+			Pieces:       pieces[:1],
+			ExtraData:    extraData,
+			DataSetID:    13245,
+		})
+		if err != nil {
+			t.Fatalf("PullPieces failed: %v", err)
+		}
+		if resp.Status != PullStatusComplete {
+			t.Errorf("Status = %s, want complete", resp.Status)
+		}
+	})
+
+	t.Run("server error is surfaced", func(t *testing.T) {
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("extraData validation failed"))
+		}))
+
+		_, err := server.PullPieces(context.Background(), PullPiecesOptions{
+			RecordKeeper: recordKeeper,
+			Pieces:       pieces,
+			ExtraData:    extraData,
+		})
+		if err == nil {
+			t.Error("Expected error from 400 response, got nil")
+		}
+	})
+}
+
+func TestServer_WaitForPullPieces(t *testing.T) {
+	pieces := []PullPieceInput{
+		{PieceCID: "bafkz...A", SourceURL: "https://example.com/piece/bafkz...A"},
+	}
+	opts := PullPiecesOptions{
+		RecordKeeper: "0x02925630df557F957f70E112bA06e50965417CA0",
+		Pieces:       pieces,
+		ExtraData:    "0xdeadbeef",
+	}
+
+	t.Run("polls until complete", func(t *testing.T) {
+		var hits int32
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n := atomic.AddInt32(&hits, 1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if n < 2 {
+				_, _ = w.Write([]byte(`{"status":"inProgress","pieces":[{"pieceCid":"bafkz...A","status":"inProgress"}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"complete","pieces":[{"pieceCid":"bafkz...A","status":"complete"}]}`))
+		}))
+
+		// shrink the poll interval inside retry.Poll: not configurable, but
+		// the default 4s window is fine if we give a generous timeout.
+		resp, err := server.WaitForPullPieces(context.Background(), opts, 30*time.Second)
+		if err != nil {
+			t.Fatalf("WaitForPullPieces failed: %v", err)
+		}
+		if resp.Status != PullStatusComplete {
+			t.Errorf("Status = %s, want complete", resp.Status)
+		}
+		if atomic.LoadInt32(&hits) < 2 {
+			t.Errorf("expected at least 2 polls, got %d", hits)
+		}
+	})
+
+	t.Run("returns failed status without error", func(t *testing.T) {
+		server, _ := setupMockServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"failed","pieces":[{"pieceCid":"bafkz...A","status":"failed"}]}`))
+		}))
+
+		resp, err := server.WaitForPullPieces(context.Background(), opts, 5*time.Second)
+		if err != nil {
+			t.Fatalf("WaitForPullPieces unexpectedly errored on failed status: %v", err)
+		}
+		if resp.Status != PullStatusFailed {
+			t.Errorf("Status = %s, want failed", resp.Status)
 		}
 	})
 }

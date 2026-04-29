@@ -29,7 +29,6 @@ type Server struct {
 	uploadClientVal *http.Client
 }
 
-
 func NewServer(baseURL string, authHelper *AuthHelper) *Server {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
@@ -51,11 +50,9 @@ func (s *Server) uploadClient() *http.Client {
 	return s.uploadClientVal
 }
 
-
 func (s *Server) BaseURL() string {
 	return s.baseURL
 }
-
 
 func (s *Server) CreateDataSet(ctx context.Context, recordKeeper string, extraData string) (*CreateDataSetResponse, error) {
 	reqBody := map[string]string{
@@ -104,7 +101,6 @@ func (s *Server) CreateDataSet(ctx context.Context, recordKeeper string, extraDa
 	}, nil
 }
 
-
 func (s *Server) GetDataSetCreationStatus(ctx context.Context, txHash string) (*DataSetCreationStatus, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", s.baseURL+"/pdp/data-sets/created/"+txHash, nil)
 	if err != nil {
@@ -135,7 +131,6 @@ func (s *Server) GetDataSetCreationStatus(ctx context.Context, txHash string) (*
 	return &status, nil
 }
 
-
 func (s *Server) WaitForDataSetCreation(ctx context.Context, txHash string, timeout time.Duration) (*DataSetCreationStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -154,7 +149,6 @@ func (s *Server) WaitForDataSetCreation(ctx context.Context, txHash string, time
 	}
 	return status, nil
 }
-
 
 func (s *Server) AddPieces(ctx context.Context, dataSetID int, pieceCIDs []cid.Cid, extraData string) (*AddPiecesResponse, error) {
 	pieces := make([]PieceData, len(pieceCIDs))
@@ -213,7 +207,6 @@ func (s *Server) AddPieces(ctx context.Context, dataSetID int, pieceCIDs []cid.C
 	}, nil
 }
 
-
 func (s *Server) GetPieceAdditionStatus(ctx context.Context, dataSetID int, txHash string) (*PieceAdditionStatus, error) {
 	url := fmt.Sprintf("%s/pdp/data-sets/%d/pieces/added/%s", s.baseURL, dataSetID, txHash)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -245,7 +238,6 @@ func (s *Server) GetPieceAdditionStatus(ctx context.Context, dataSetID int, txHa
 	return &status, nil
 }
 
-
 func (s *Server) WaitForPieceAddition(ctx context.Context, dataSetID int, txHash string, timeout time.Duration) (*PieceAdditionStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -264,7 +256,6 @@ func (s *Server) WaitForPieceAddition(ctx context.Context, dataSetID int, txHash
 	}
 	return status, nil
 }
-
 
 func (s *Server) UploadPiece(ctx context.Context, data io.Reader, size int64, pieceCID cid.Cid) (*UploadPieceResponse, error) {
 	createReq, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/pdp/piece/uploads", nil)
@@ -345,7 +336,6 @@ func (s *Server) UploadPiece(ctx context.Context, data io.Reader, size int64, pi
 	}, nil
 }
 
-
 func (s *Server) FindPiece(ctx context.Context, pieceCID cid.Cid) error {
 	params := url.Values{}
 	params.Set("pieceCid", pieceCID.String())
@@ -374,7 +364,6 @@ func (s *Server) FindPiece(ctx context.Context, pieceCID cid.Cid) error {
 	return nil
 }
 
-
 func (s *Server) WaitForPiece(ctx context.Context, pieceCID cid.Cid, timeout time.Duration) error {
 	return retry.Poll(ctx, 5*time.Second, timeout, func() (bool, error) {
 		err := s.FindPiece(ctx, pieceCID)
@@ -387,7 +376,6 @@ func (s *Server) WaitForPiece(ctx context.Context, pieceCID cid.Cid, timeout tim
 		return true, nil
 	})
 }
-
 
 func (s *Server) DownloadPiece(ctx context.Context, pieceCID cid.Cid) ([]byte, error) {
 	reqURL := fmt.Sprintf("%s/pdp/piece/%s", s.baseURL, pieceCID.String())
@@ -413,7 +401,6 @@ func (s *Server) DownloadPiece(ctx context.Context, pieceCID cid.Cid) ([]byte, e
 
 	return io.ReadAll(resp.Body)
 }
-
 
 func (s *Server) GetDataSet(ctx context.Context, dataSetID int) (*DataSetData, error) {
 	reqURL := fmt.Sprintf("%s/pdp/data-sets/%d", s.baseURL, dataSetID)
@@ -445,6 +432,79 @@ func (s *Server) GetDataSet(ctx context.Context, dataSetID int) (*DataSetData, e
 	return &data, nil
 }
 
+// PullPieces issues POST /pdp/piece/pull. The endpoint is idempotent on
+// (service, sha256(extraData), dataSetId, recordKeeper); calling with the
+// same arguments returns the current status of an existing pull rather
+// than starting a new one. Authorization is the EIP-712-signed extraData,
+// which Curio verifies via eth_call against PDPVerifier.addPieces() before
+// any state change. Pass DataSetID == 0 to atomically create a new data
+// set and add the pieces in one shot.
+func (s *Server) PullPieces(ctx context.Context, opts PullPiecesOptions) (*PullPiecesResponse, error) {
+	reqBody := PullPiecesRequest{
+		ExtraData:    opts.ExtraData,
+		RecordKeeper: opts.RecordKeeper,
+		Pieces:       opts.Pieces,
+	}
+	if opts.DataSetID > 0 {
+		id := opts.DataSetID
+		reqBody.DataSetID = &id
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pull pieces request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/pdp/piece/pull", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pull pieces request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("pull pieces request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var pullResp PullPiecesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pullResp); err != nil {
+		return nil, fmt.Errorf("failed to decode pull pieces response: %w", err)
+	}
+
+	return &pullResp, nil
+}
+
+// WaitForPullPieces re-POSTs the same pull request (idempotent) until the
+// aggregate status is complete or failed, or the timeout elapses.
+func (s *Server) WaitForPullPieces(ctx context.Context, opts PullPiecesOptions, timeout time.Duration) (*PullPiecesResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var last *PullPiecesResponse
+	err := retry.Poll(ctx, 4*time.Second, timeout, func() (bool, error) {
+		resp, err := s.PullPieces(ctx, opts)
+		if err != nil {
+			return false, err
+		}
+		last = resp
+		switch resp.Status {
+		case PullStatusComplete, PullStatusFailed:
+			return true, nil
+		default:
+			return false, nil
+		}
+	})
+	if err != nil {
+		return last, err
+	}
+	return last, nil
+}
 
 func (s *Server) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", s.baseURL+"/pdp/ping", nil)
