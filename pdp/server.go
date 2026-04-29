@@ -106,6 +106,73 @@ func (s *Server) CreateDataSet(ctx context.Context, recordKeeper string, extraDa
 	}, nil
 }
 
+// CreateDataSetAndAddPieces issues POST /pdp/data-sets/create-and-add. The
+// SP submits a single addPieces(dataSetId=0, recordKeeper, ...) on chain
+// from its own wallet, atomically creating a new data set with the given
+// recordKeeper as listener and adding the supplied pieces in one tx. The
+// pieces must already be local on the SP (e.g. via prior /pdp/piece/pull
+// or /pdp/piece/uploads). extraData is the abi.encode(bytes,bytes) of the
+// EIP-712-signed CreateDataSet and AddPieces blobs (see
+// EncodeCreateDataSetAndAddPiecesExtraData). Status (and the eventual
+// dataSetId) is observed through GetDataSetCreationStatus on the returned
+// txHash.
+func (s *Server) CreateDataSetAndAddPieces(ctx context.Context, recordKeeper string, pieceCIDs []cid.Cid, extraData string) (*CreateDataSetResponse, error) {
+	pieces := make([]PieceData, len(pieceCIDs))
+	for i, c := range pieceCIDs {
+		cidStr := c.String()
+		pieces[i] = PieceData{
+			PieceCID: cidStr,
+			SubPieces: []SubPieceData{
+				{SubPieceCID: cidStr},
+			},
+		}
+	}
+
+	reqBody := CreateAndAddRequest{
+		RecordKeeper: recordKeeper,
+		Pieces:       pieces,
+		ExtraData:    extraData,
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal create-and-add request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/pdp/data-sets/create-and-add", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create create-and-add request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("create-and-add request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	location := resp.Header.Get("Location")
+	if location == "" {
+		return nil, fmt.Errorf("missing Location header")
+	}
+
+	parts := strings.Split(location, "/")
+	txHash := parts[len(parts)-1]
+	if !strings.HasPrefix(txHash, "0x") {
+		return nil, fmt.Errorf("invalid txHash in Location header: %s", txHash)
+	}
+
+	return &CreateDataSetResponse{
+		TxHash:    txHash,
+		StatusURL: s.baseURL + location,
+	}, nil
+}
+
 func (s *Server) GetDataSetCreationStatus(ctx context.Context, txHash string) (*DataSetCreationStatus, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", s.baseURL+"/pdp/data-sets/created/"+txHash, nil)
 	if err != nil {
