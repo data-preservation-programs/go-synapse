@@ -135,7 +135,7 @@ func (c *Client) Storage() (*storage.Manager, error) {
 	}
 
 	authHelper := pdp.NewAuthHelper(c.privateKey, c.warmStorageAddress, big.NewInt(c.chainID))
-	pdpServer := pdp.NewServer(c.providerURL, authHelper)
+	pdpServer := pdp.NewServer(c.providerURL)
 
 	var opts []storage.ManagerOption
 	if c.dataSetID != 0 {
@@ -208,6 +208,5 @@ func (c *Client) NewAuthHelper() *pdp.AuthHelper {
 }
 
 func (c *Client) NewPDPServer(providerURL string) *pdp.Server {
-	authHelper := c.NewAuthHelper()
-	return pdp.NewServer(providerURL, authHelper)
+	return pdp.NewServer(providerURL)
 }
