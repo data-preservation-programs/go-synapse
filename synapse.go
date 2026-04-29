@@ -1,5 +1,3 @@
-
-
 package synapse
 
 import (
@@ -18,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-
 type Options struct {
 	PrivateKey *ecdsa.PrivateKey
 
@@ -30,7 +27,6 @@ type Options struct {
 
 	DataSetID int
 }
-
 
 type Client struct {
 	network            Network
@@ -44,7 +40,6 @@ type Client struct {
 	providerURL        string
 	dataSetID          int
 }
-
 
 func New(ctx context.Context, opts Options) (*Client, error) {
 	if opts.PrivateKey == nil {
@@ -100,7 +95,6 @@ func New(ctx context.Context, opts Options) (*Client, error) {
 	return client, nil
 }
 
-
 func (c *Client) Network() Network {
 	return c.network
 }
@@ -109,21 +103,17 @@ func (c *Client) ChainID() int64 {
 	return c.chainID
 }
 
-
 func (c *Client) Address() common.Address {
 	return c.address
 }
-
 
 func (c *Client) WarmStorageAddress() common.Address {
 	return c.warmStorageAddress
 }
 
-
 func (c *Client) EthClient() *ethclient.Client {
 	return c.ethClient
 }
-
 
 func (c *Client) Storage() (*storage.Manager, error) {
 	if c.storageManager != nil {
@@ -158,7 +148,6 @@ func (c *Client) Storage() (*storage.Manager, error) {
 
 	return c.storageManager, nil
 }
-
 
 // Costs returns a lazily-initialized costs service for computing storage
 // costs and deposit requirements.
@@ -201,7 +190,6 @@ func (c *Client) Close() {
 		c.ethClient.Close()
 	}
 }
-
 
 func (c *Client) NewAuthHelper() *pdp.AuthHelper {
 	return pdp.NewAuthHelper(c.privateKey, c.warmStorageAddress, big.NewInt(c.chainID))
