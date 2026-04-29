@@ -112,6 +112,66 @@ type UploadCompleteResponse struct {
 	Size     int64  `json:"size"`
 }
 
+// PullStatus is the wire-level status enum for a pull request or an
+// individual piece within one. Aggregate (response-level) status reflects
+// the worst case across all pieces: failed > retrying > inProgress >
+// pending > complete.
+type PullStatus string
+
+const (
+	PullStatusPending    PullStatus = "pending"
+	PullStatusInProgress PullStatus = "inProgress"
+	PullStatusRetrying   PullStatus = "retrying"
+	PullStatusComplete   PullStatus = "complete"
+	PullStatusFailed     PullStatus = "failed"
+)
+
+// PullPieceInput names a piece and the source URL Curio should fetch it
+// from. SourceURL must be HTTPS and end in /piece/{pieceCid}.
+type PullPieceInput struct {
+	PieceCID  string `json:"pieceCid"`
+	SourceURL string `json:"sourceUrl"`
+}
+
+// PullPieceStatus is per-piece status in a PullPiecesResponse.
+type PullPieceStatus struct {
+	PieceCID string     `json:"pieceCid"`
+	Status   PullStatus `json:"status"`
+}
+
+// PullPiecesRequest is the JSON body Curio expects on POST /pdp/piece/pull.
+// DataSetID is omitted from the wire when nil; callers signal
+// "create a new set" by passing nil and supplying a combined
+// CreateDataSet+AddPieces extraData (see EncodeCreateDataSetAndAddPiecesExtraData).
+type PullPiecesRequest struct {
+	ExtraData    string           `json:"extraData"`
+	RecordKeeper string           `json:"recordKeeper"`
+	Pieces       []PullPieceInput `json:"pieces"`
+	DataSetID    *uint64          `json:"dataSetId,omitempty"`
+}
+
+// PullPiecesResponse is the JSON body Curio returns from POST /pdp/piece/pull.
+type PullPiecesResponse struct {
+	Status PullStatus        `json:"status"`
+	Pieces []PullPieceStatus `json:"pieces"`
+}
+
+// PullPiecesOptions is the higher-level argument for Server.PullPieces and
+// Server.WaitForPullPieces. DataSetID == 0 signals "create a new set"
+// (the request will omit the field on the wire).
+type PullPiecesOptions struct {
+	// RecordKeeper is the FWSS contract address (hex). Required.
+	RecordKeeper string
+	// Pieces lists the pieces to pull and their source URLs.
+	Pieces []PullPieceInput
+	// ExtraData is the EIP-712-signed authorization blob. For new sets,
+	// build it with EncodeCreateDataSetAndAddPiecesExtraData. For
+	// existing sets, EncodeAddPiecesExtraData alone.
+	ExtraData string
+	// DataSetID is the target set ID, or 0 to create a new set atomically.
+	DataSetID uint64
+}
+
 // ManagerConfig holds configuration options for the Manager
 type ManagerConfig struct {
 	// GasBufferPercent is the percentage buffer to add to gas estimates (0-100)

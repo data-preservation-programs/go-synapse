@@ -1,8 +1,10 @@
 package pdp
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -83,4 +85,38 @@ func EncodeScheduleRemovalsExtraData(signature []byte) (string, error) {
 	}
 
 	return "0x" + common.Bytes2Hex(encoded), nil
+}
+
+
+// EncodeCreateDataSetAndAddPiecesExtraData wraps the two extraData blobs
+// (from EncodeDataSetCreateData and EncodeAddPiecesExtraData) into the
+// combined abi.encode(bytes,bytes) form Curio's /pdp/piece/pull expects
+// when atomically creating a new data set and adding pieces in one shot.
+// Inputs are hex strings (with or without 0x prefix), as produced by the
+// sibling encoders in this file.
+func EncodeCreateDataSetAndAddPiecesExtraData(createDataSetExtraHex, addPiecesExtraHex string) (string, error) {
+	createBytes, err := decodeHex(createDataSetExtraHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid createDataSet extra data: %w", err)
+	}
+	addPiecesBytes, err := decodeHex(addPiecesExtraHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid addPieces extra data: %w", err)
+	}
+
+	args := abi.Arguments{
+		{Type: bytesType},
+		{Type: bytesType},
+	}
+
+	encoded, err := args.Pack(createBytes, addPiecesBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode create-and-add extra data: %w", err)
+	}
+
+	return "0x" + common.Bytes2Hex(encoded), nil
+}
+
+func decodeHex(s string) ([]byte, error) {
+	return hex.DecodeString(strings.TrimPrefix(s, "0x"))
 }

@@ -446,6 +446,82 @@ func (s *Server) GetDataSet(ctx context.Context, dataSetID int) (*DataSetData, e
 }
 
 
+// PullPieces issues POST /pdp/piece/pull. The endpoint is idempotent on
+// (service, sha256(extraData), dataSetId, recordKeeper); calling with the
+// same arguments returns the current status of an existing pull rather
+// than starting a new one. Authorization is the EIP-712-signed extraData,
+// which Curio verifies via eth_call against PDPVerifier.addPieces() before
+// any state change. Pass DataSetID == 0 to atomically create a new data
+// set and add the pieces in one shot.
+func (s *Server) PullPieces(ctx context.Context, opts PullPiecesOptions) (*PullPiecesResponse, error) {
+	reqBody := PullPiecesRequest{
+		ExtraData:    opts.ExtraData,
+		RecordKeeper: opts.RecordKeeper,
+		Pieces:       opts.Pieces,
+	}
+	if opts.DataSetID > 0 {
+		id := opts.DataSetID
+		reqBody.DataSetID = &id
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pull pieces request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/pdp/piece/pull", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pull pieces request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("pull pieces request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var pullResp PullPiecesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pullResp); err != nil {
+		return nil, fmt.Errorf("failed to decode pull pieces response: %w", err)
+	}
+
+	return &pullResp, nil
+}
+
+
+// WaitForPullPieces re-POSTs the same pull request (idempotent) until the
+// aggregate status is complete or failed, or the timeout elapses.
+func (s *Server) WaitForPullPieces(ctx context.Context, opts PullPiecesOptions, timeout time.Duration) (*PullPiecesResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var last *PullPiecesResponse
+	err := retry.Poll(ctx, 4*time.Second, timeout, func() (bool, error) {
+		resp, err := s.PullPieces(ctx, opts)
+		if err != nil {
+			return false, err
+		}
+		last = resp
+		switch resp.Status {
+		case PullStatusComplete, PullStatusFailed:
+			return true, nil
+		default:
+			return false, nil
+		}
+	})
+	if err != nil {
+		return last, err
+	}
+	return last, nil
+}
+
+
 func (s *Server) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", s.baseURL+"/pdp/ping", nil)
 	if err != nil {
