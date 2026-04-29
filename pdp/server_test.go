@@ -26,15 +26,12 @@ func testAuthHelper(t *testing.T) *AuthHelper {
 }
 
 func setupMockServer(t *testing.T, handler http.Handler) (*Server, *httptest.Server) {
-	authHelper := testAuthHelper(t)
 	mockServer := httptest.NewServer(handler)
 	t.Cleanup(mockServer.Close)
-	return NewServer(mockServer.URL, authHelper), mockServer
+	return NewServer(mockServer.URL), mockServer
 }
 
 func TestServer_NewServer(t *testing.T) {
-	authHelper := testAuthHelper(t)
-
 	tests := []struct {
 		name        string
 		baseURL     string
@@ -59,7 +56,7 @@ func TestServer_NewServer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := NewServer(tt.baseURL, authHelper)
+			server := NewServer(tt.baseURL)
 			if server.BaseURL() != tt.expectedURL {
 				t.Errorf("BaseURL() = %s, want %s", server.BaseURL(), tt.expectedURL)
 			}

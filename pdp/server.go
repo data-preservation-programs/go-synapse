@@ -21,20 +21,25 @@ const (
 	defaultTimeout = 5 * time.Minute
 )
 
+// Server is a thin HTTP client for Curio's /pdp/* endpoints. It does not
+// hold an EIP-712 signer: extraData blobs (build via AuthHelper +
+// EncodeDataSetCreateData / EncodeAddPiecesExtraData and friends) are
+// passed in pre-signed by callers, and Curio verifies them server-side via
+// eth_call against PDPVerifier. There is no HTTP-level auth required by
+// default Curio deployments (NullAuth); operators can opt into JWTAuth,
+// but wiring that in is out of scope for this client.
 type Server struct {
 	baseURL         string
-	authHelper      *AuthHelper
 	httpClient      *http.Client
 	uploadClientMu  sync.Mutex
 	uploadClientVal *http.Client
 }
 
-func NewServer(baseURL string, authHelper *AuthHelper) *Server {
+func NewServer(baseURL string) *Server {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &Server{
-		baseURL:    baseURL,
-		authHelper: authHelper,
+		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
