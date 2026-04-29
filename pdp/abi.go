@@ -10,16 +10,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-
-
 var (
-	addressType, _   = abi.NewType("address", "", nil)
-	uint256Type, _   = abi.NewType("uint256", "", nil)
-	stringArrayType, _ = abi.NewType("string[]", "", nil)
+	addressType, _       = abi.NewType("address", "", nil)
+	uint256Type, _       = abi.NewType("uint256", "", nil)
+	stringArrayType, _   = abi.NewType("string[]", "", nil)
 	stringArray2DType, _ = abi.NewType("string[][]", "", nil)
-	bytesType, _     = abi.NewType("bytes", "", nil)
+	bytesType, _         = abi.NewType("bytes", "", nil)
 )
-
 
 func EncodeDataSetCreateData(payer common.Address, clientDataSetID *big.Int, metadata []MetadataEntry, signature []byte) (string, error) {
 	keys := make([]string, len(metadata))
@@ -44,7 +41,6 @@ func EncodeDataSetCreateData(payer common.Address, clientDataSetID *big.Int, met
 
 	return "0x" + common.Bytes2Hex(encoded), nil
 }
-
 
 func EncodeAddPiecesExtraData(nonce *big.Int, metadata [][]MetadataEntry, signature []byte) (string, error) {
 	keys := make([][]string, len(metadata))
@@ -73,7 +69,6 @@ func EncodeAddPiecesExtraData(nonce *big.Int, metadata [][]MetadataEntry, signat
 	return "0x" + common.Bytes2Hex(encoded), nil
 }
 
-
 func EncodeScheduleRemovalsExtraData(signature []byte) (string, error) {
 	args := abi.Arguments{
 		{Type: bytesType},
@@ -86,7 +81,6 @@ func EncodeScheduleRemovalsExtraData(signature []byte) (string, error) {
 
 	return "0x" + common.Bytes2Hex(encoded), nil
 }
-
 
 // EncodeCreateDataSetAndAddPiecesExtraData wraps the two extraData blobs
 // (from EncodeDataSetCreateData and EncodeAddPiecesExtraData) into the
