@@ -2,6 +2,7 @@ package spregistry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -349,19 +350,8 @@ func (c *Contract) GetProvider(ctx context.Context, providerID *big.Int) (*GetPr
 		return nil, fmt.Errorf("getProvider call failed: %w", err)
 	}
 
-	var res struct {
-		ProviderID *big.Int `abi:"providerId"`
-		Info       struct {
-			ServiceProvider common.Address `abi:"serviceProvider"`
-			Payee           common.Address `abi:"payee"`
-			Name            string         `abi:"name"`
-			Description     string         `abi:"description"`
-			IsActive        bool           `abi:"isActive"`
-		} `abi:"info"`
-	}
-
-	err = c.abi.UnpackIntoInterface(&res, "getProvider", result)
-	if err != nil {
+	var res getProviderByAddressOutput
+	if err := unpackSingleTuple(c.abi, "getProvider", result, &res); err != nil {
 		return nil, fmt.Errorf("failed to unpack getProvider result: %w", err)
 	}
 
@@ -391,19 +381,8 @@ func (c *Contract) GetProviderByAddress(ctx context.Context, addr common.Address
 		return nil, fmt.Errorf("getProviderByAddress call failed: %w", err)
 	}
 
-	var res struct {
-		ProviderID *big.Int `abi:"providerId"`
-		Info       struct {
-			ServiceProvider common.Address `abi:"serviceProvider"`
-			Payee           common.Address `abi:"payee"`
-			Name            string         `abi:"name"`
-			Description     string         `abi:"description"`
-			IsActive        bool           `abi:"isActive"`
-		} `abi:"info"`
-	}
-
-	err = c.abi.UnpackIntoInterface(&res, "getProviderByAddress", result)
-	if err != nil {
+	var res getProviderByAddressOutput
+	if err := unpackSingleTuple(c.abi, "getProviderByAddress", result, &res); err != nil {
 		return nil, fmt.Errorf("failed to unpack getProviderByAddress result: %w", err)
 	}
 
@@ -417,6 +396,44 @@ func (c *Contract) GetProviderByAddress(ctx context.Context, addr common.Address
 			IsActive:        res.Info.IsActive,
 		},
 	}, nil
+}
+
+// getProviderByAddressOutput mirrors the (providerId, info) tuple
+// getProviderByAddress returns. Tagged for json round-trip via
+// unpackSingleTuple below.
+type getProviderByAddressOutput struct {
+	ProviderID *big.Int                       `json:"providerId"`
+	Info       getProviderByAddressOutputInfo `json:"info"`
+}
+
+type getProviderByAddressOutputInfo struct {
+	ServiceProvider common.Address `json:"serviceProvider"`
+	Payee           common.Address `json:"payee"`
+	Name            string         `json:"name"`
+	Description     string         `json:"description"`
+	IsActive        bool           `json:"isActive"`
+}
+
+// unpackSingleTuple decodes an ABI method's single-tuple return into dst
+// via abi.Unpack + json round-trip. UnpackIntoInterface mishandles this
+// shape; Unpack returns the right anonymous struct, json copies it into
+// dst by matching json tags. dst must be a pointer to a tagged struct.
+func unpackSingleTuple(parsed abi.ABI, method string, payload []byte, dst any) error {
+	out, err := parsed.Unpack(method, payload)
+	if err != nil {
+		return err
+	}
+	if len(out) != 1 {
+		return fmt.Errorf("%s: expected 1 output, got %d", method, len(out))
+	}
+	buf, err := json.Marshal(out[0])
+	if err != nil {
+		return fmt.Errorf("%s: marshal unpacked tuple: %w", method, err)
+	}
+	if err := json.Unmarshal(buf, dst); err != nil {
+		return fmt.Errorf("%s: decode into %T: %w", method, dst, err)
+	}
+	return nil
 }
 
 func (c *Contract) GetProviderIDByAddress(ctx context.Context, addr common.Address) (*big.Int, error) {
@@ -446,10 +463,10 @@ func (c *Contract) GetProviderIDByAddress(ctx context.Context, addr common.Addre
 }
 
 type GetProviderWithProductResult struct {
-	ProviderID               *big.Int
-	ProviderInfo             RawProviderInfo
-	Product                  RawProduct
-	ProductCapabilityValues  [][]byte
+	ProviderID              *big.Int
+	ProviderInfo            RawProviderInfo
+	Product                 RawProduct
+	ProductCapabilityValues [][]byte
 }
 
 func (c *Contract) GetProviderWithProduct(ctx context.Context, providerID *big.Int, productType uint8) (*GetProviderWithProductResult, error) {
