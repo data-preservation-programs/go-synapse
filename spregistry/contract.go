@@ -483,25 +483,8 @@ func (c *Contract) GetProviderWithProduct(ctx context.Context, providerID *big.I
 		return nil, fmt.Errorf("getProviderWithProduct call failed: %w", err)
 	}
 
-	var res struct {
-		ProviderID   *big.Int `abi:"providerId"`
-		ProviderInfo struct {
-			ServiceProvider common.Address `abi:"serviceProvider"`
-			Payee           common.Address `abi:"payee"`
-			Name            string         `abi:"name"`
-			Description     string         `abi:"description"`
-			IsActive        bool           `abi:"isActive"`
-		} `abi:"providerInfo"`
-		Product struct {
-			ProductType    uint8    `abi:"productType"`
-			CapabilityKeys []string `abi:"capabilityKeys"`
-			IsActive       bool     `abi:"isActive"`
-		} `abi:"product"`
-		ProductCapabilityValues [][]byte `abi:"productCapabilityValues"`
-	}
-
-	err = c.abi.UnpackIntoInterface(&res, "getProviderWithProduct", result)
-	if err != nil {
+	var res getProviderWithProductOutput
+	if err := unpackSingleTuple(c.abi, "getProviderWithProduct", result, &res); err != nil {
 		return nil, fmt.Errorf("failed to unpack getProviderWithProduct result: %w", err)
 	}
 
@@ -521,6 +504,23 @@ func (c *Contract) GetProviderWithProduct(ctx context.Context, providerID *big.I
 		},
 		ProductCapabilityValues: res.ProductCapabilityValues,
 	}, nil
+}
+
+// getProviderWithProductOutput mirrors the (providerId, providerInfo,
+// product, productCapabilityValues) tuple getProviderWithProduct
+// returns. Same json-tagged shape pattern as getProviderByAddressOutput
+// for unpackSingleTuple.
+type getProviderWithProductOutput struct {
+	ProviderID              *big.Int                            `json:"providerId"`
+	ProviderInfo            getProviderByAddressOutputInfo      `json:"providerInfo"`
+	Product                 getProviderWithProductOutputProduct `json:"product"`
+	ProductCapabilityValues [][]byte                            `json:"productCapabilityValues"`
+}
+
+type getProviderWithProductOutputProduct struct {
+	ProductType    uint8    `json:"productType"`
+	CapabilityKeys []string `json:"capabilityKeys"`
+	IsActive       bool     `json:"isActive"`
 }
 
 func (c *Contract) GetAllActiveProviders(ctx context.Context, offset, limit *big.Int) ([]*big.Int, bool, error) {
