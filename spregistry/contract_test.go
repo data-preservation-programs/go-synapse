@@ -5,13 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/data-preservation-programs/go-synapse/pkg/abix"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 )
 
 // TestUnpackSingleTuple_GetProviderByAddress exercises the unpack path
 // Contract.GetProviderByAddress uses, against a synthetic return blob.
-// Reproduces the calibnet bug if unpackSingleTuple regresses to
+// Reproduces the calibnet bug if abix.UnpackSingleTuple regresses to
 // UnpackIntoInterface (which mishandles this shape).
 func TestUnpackSingleTuple_GetProviderByAddress(t *testing.T) {
 	parsedABI, err := abi.JSON(strings.NewReader(SPRegistryABIJSON))
@@ -52,8 +53,8 @@ func TestUnpackSingleTuple_GetProviderByAddress(t *testing.T) {
 	}
 
 	var got getProviderByAddressOutput
-	if err := unpackSingleTuple(parsedABI, "getProviderByAddress", payload, &got); err != nil {
-		t.Fatalf("unpackSingleTuple: %v", err)
+	if err := abix.UnpackSingleTuple(parsedABI, "getProviderByAddress", payload, &got); err != nil {
+		t.Fatalf("UnpackSingleTuple: %v", err)
 	}
 
 	if got.ProviderID == nil || got.ProviderID.Cmp(big.NewInt(24)) != 0 {
@@ -135,8 +136,8 @@ func TestUnpackSingleTuple_GetProviderWithProduct(t *testing.T) {
 	}
 
 	var got getProviderWithProductOutput
-	if err := unpackSingleTuple(parsedABI, "getProviderWithProduct", payload, &got); err != nil {
-		t.Fatalf("unpackSingleTuple: %v", err)
+	if err := abix.UnpackSingleTuple(parsedABI, "getProviderWithProduct", payload, &got); err != nil {
+		t.Fatalf("UnpackSingleTuple: %v", err)
 	}
 
 	if got.ProviderID == nil || got.ProviderID.Cmp(big.NewInt(24)) != 0 {

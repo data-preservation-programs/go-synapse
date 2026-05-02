@@ -51,6 +51,9 @@ func ResolveFromFWSS(ctx context.Context, client *ethclient.Client, fwssAddr com
 			return common.Address{}, fmt.Errorf("call %s: %w", method, err)
 		}
 		var addr common.Address
+		// safe: single primitive output, not a named tuple -- the
+		// UnpackIntoInterface bug abix.UnpackSingleTuple guards against
+		// only manifests for tuple returns.
 		if err := parsed.UnpackIntoInterface(&addr, method, result); err != nil {
 			return common.Address{}, fmt.Errorf("unpack %s: %w", method, err)
 		}
