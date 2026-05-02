@@ -1,10 +1,12 @@
 package contracts
 
 import (
+	"encoding/json"
 	"math/big"
 	"strings"
 	"testing"
 
+	"github.com/data-preservation-programs/go-synapse/pkg/abix"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -209,4 +211,147 @@ func TestRailInfoResult(t *testing.T) {
 			t.Error("Terminated rail should have EndEpoch > 0")
 		}
 	})
+}
+
+// TestUnpackRail_GetRail exercises the unpack path GetRail uses against a
+// synthetic return blob. Reproduces a regression if abix.UnpackSingleTuple
+// or getRailOutput's json tags fall out of sync with the ABI.
+func TestUnpackRail_GetRail(t *testing.T) {
+	parsedABI, err := abi.JSON(strings.NewReader(PaymentsABIJSON))
+	if err != nil {
+		t.Fatalf("parse ABI: %v", err)
+	}
+	method, ok := parsedABI.Methods["getRail"]
+	if !ok {
+		t.Fatalf("getRail not found in ABI")
+	}
+
+	type railT struct {
+		Token               common.Address `abi:"token"`
+		From                common.Address `abi:"from"`
+		To                  common.Address `abi:"to"`
+		Operator            common.Address `abi:"operator"`
+		Validator           common.Address `abi:"validator"`
+		PaymentRate         *big.Int       `abi:"paymentRate"`
+		LockupPeriod        *big.Int       `abi:"lockupPeriod"`
+		LockupFixed         *big.Int       `abi:"lockupFixed"`
+		SettledUpTo         *big.Int       `abi:"settledUpTo"`
+		EndEpoch            *big.Int       `abi:"endEpoch"`
+		CommissionRateBps   *big.Int       `abi:"commissionRateBps"`
+		ServiceFeeRecipient common.Address `abi:"serviceFeeRecipient"`
+	}
+	want := railT{
+		Token:               common.HexToAddress("0x1111111111111111111111111111111111111111"),
+		From:                common.HexToAddress("0x2222222222222222222222222222222222222222"),
+		To:                  common.HexToAddress("0x3333333333333333333333333333333333333333"),
+		Operator:            common.HexToAddress("0x4444444444444444444444444444444444444444"),
+		Validator:           common.HexToAddress("0x5555555555555555555555555555555555555555"),
+		PaymentRate:         big.NewInt(1000000000000000000),
+		LockupPeriod:        big.NewInt(2880),
+		LockupFixed:         big.NewInt(0),
+		SettledUpTo:         big.NewInt(1000000),
+		EndEpoch:            big.NewInt(0),
+		CommissionRateBps:   big.NewInt(500),
+		ServiceFeeRecipient: common.HexToAddress("0x6666666666666666666666666666666666666666"),
+	}
+	payload, err := method.Outputs.Pack(want)
+	if err != nil {
+		t.Fatalf("pack synthetic return: %v", err)
+	}
+
+	var got getRailOutput
+	if err := abix.UnpackSingleTuple(parsedABI, "getRail", payload, &got); err != nil {
+		t.Fatalf("UnpackSingleTuple: %v", err)
+	}
+	if got.Token != want.Token {
+		t.Errorf("Token = %s, want %s", got.Token, want.Token)
+	}
+	if got.From != want.From {
+		t.Errorf("From = %s, want %s", got.From, want.From)
+	}
+	if got.PaymentRate == nil || got.PaymentRate.Cmp(want.PaymentRate) != 0 {
+		t.Errorf("PaymentRate = %v, want %v", got.PaymentRate, want.PaymentRate)
+	}
+	if got.CommissionRateBps == nil || got.CommissionRateBps.Cmp(want.CommissionRateBps) != 0 {
+		t.Errorf("CommissionRateBps = %v, want %v", got.CommissionRateBps, want.CommissionRateBps)
+	}
+	if got.ServiceFeeRecipient != want.ServiceFeeRecipient {
+		t.Errorf("ServiceFeeRecipient = %s, want %s", got.ServiceFeeRecipient, want.ServiceFeeRecipient)
+	}
+}
+
+// TestUnpackRail_GetRailsForPayerAndToken exercises the unpack path
+// GetRailsForPayerAndToken uses against a synthetic return blob.
+// getRailsForPayerAndToken returns 3 outputs (results[], nextOffset, total)
+// so the json round-trip applies to values[0] only.
+func TestUnpackRail_GetRailsForPayerAndToken(t *testing.T) {
+	parsedABI, err := abi.JSON(strings.NewReader(PaymentsABIJSON))
+	if err != nil {
+		t.Fatalf("parse ABI: %v", err)
+	}
+	method, ok := parsedABI.Methods["getRailsForPayerAndToken"]
+	if !ok {
+		t.Fatalf("getRailsForPayerAndToken not found in ABI")
+	}
+
+	type itemT struct {
+		RailId       *big.Int `abi:"railId"`
+		IsTerminated bool     `abi:"isTerminated"`
+		EndEpoch     *big.Int `abi:"endEpoch"`
+	}
+	results := []itemT{
+		{RailId: big.NewInt(7), IsTerminated: false, EndEpoch: big.NewInt(0)},
+		{RailId: big.NewInt(11), IsTerminated: true, EndEpoch: big.NewInt(900000)},
+	}
+	nextOffset := big.NewInt(2)
+	total := big.NewInt(2)
+
+	payload, err := method.Outputs.Pack(results, nextOffset, total)
+	if err != nil {
+		t.Fatalf("pack synthetic return: %v", err)
+	}
+
+	values, err := parsedABI.Unpack("getRailsForPayerAndToken", payload)
+	if err != nil {
+		t.Fatalf("Unpack: %v", err)
+	}
+	if len(values) != 3 {
+		t.Fatalf("expected 3 values, got %d", len(values))
+	}
+
+	buf, err := json.Marshal(values[0])
+	if err != nil {
+		t.Fatalf("marshal results: %v", err)
+	}
+	var rawResults []getRailsForPayerAndTokenItem
+	if err := json.Unmarshal(buf, &rawResults); err != nil {
+		t.Fatalf("decode results: %v", err)
+	}
+	if len(rawResults) != 2 {
+		t.Fatalf("len = %d, want 2", len(rawResults))
+	}
+	if rawResults[0].RailId == nil || rawResults[0].RailId.Cmp(big.NewInt(7)) != 0 {
+		t.Errorf("results[0].RailId = %v, want 7", rawResults[0].RailId)
+	}
+	if rawResults[0].IsTerminated {
+		t.Errorf("results[0].IsTerminated = true, want false")
+	}
+	if rawResults[1].RailId == nil || rawResults[1].RailId.Cmp(big.NewInt(11)) != 0 {
+		t.Errorf("results[1].RailId = %v, want 11", rawResults[1].RailId)
+	}
+	if !rawResults[1].IsTerminated {
+		t.Errorf("results[1].IsTerminated = false, want true")
+	}
+	if rawResults[1].EndEpoch == nil || rawResults[1].EndEpoch.Cmp(big.NewInt(900000)) != 0 {
+		t.Errorf("results[1].EndEpoch = %v, want 900000", rawResults[1].EndEpoch)
+	}
+
+	gotNextOffset, ok := values[1].(*big.Int)
+	if !ok || gotNextOffset.Cmp(nextOffset) != 0 {
+		t.Errorf("nextOffset = %v, want %v", values[1], nextOffset)
+	}
+	gotTotal, ok := values[2].(*big.Int)
+	if !ok || gotTotal.Cmp(total) != 0 {
+		t.Errorf("total = %v, want %v", values[2], total)
+	}
 }

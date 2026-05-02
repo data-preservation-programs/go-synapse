@@ -70,6 +70,9 @@ func readAddresses(ctx context.Context, rpcURL string, fwssAddr common.Address) 
 		}
 
 		var addr common.Address
+		// safe: single primitive output, not a named tuple -- the
+		// UnpackIntoInterface bug abix.UnpackSingleTuple guards against
+		// only manifests for tuple returns.
 		if err := parsed.UnpackIntoInterface(&addr, method, result); err != nil {
 			return common.Address{}, fmt.Errorf("unpack %s: %w", method, err)
 		}

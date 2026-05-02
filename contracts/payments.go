@@ -2,10 +2,12 @@ package contracts
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
 
+	"github.com/data-preservation-programs/go-synapse/pkg/abix"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -251,6 +253,32 @@ type RailInfoResult struct {
 	EndEpoch     *big.Int
 }
 
+// getRailOutput mirrors the Rail struct getRail returns. Tagged for json
+// round-trip via abix.UnpackSingleTuple; raw type assertion against the
+// anonymous struct go-ethereum builds is fragile across versions.
+type getRailOutput struct {
+	Token               common.Address `json:"token"`
+	From                common.Address `json:"from"`
+	To                  common.Address `json:"to"`
+	Operator            common.Address `json:"operator"`
+	Validator           common.Address `json:"validator"`
+	PaymentRate         *big.Int       `json:"paymentRate"`
+	LockupPeriod        *big.Int       `json:"lockupPeriod"`
+	LockupFixed         *big.Int       `json:"lockupFixed"`
+	SettledUpTo         *big.Int       `json:"settledUpTo"`
+	EndEpoch            *big.Int       `json:"endEpoch"`
+	CommissionRateBps   *big.Int       `json:"commissionRateBps"`
+	ServiceFeeRecipient common.Address `json:"serviceFeeRecipient"`
+}
+
+// getRailsForPayerAndTokenItem mirrors a single tuple element of the
+// results array. Same json-tag pattern as getRailOutput.
+type getRailsForPayerAndTokenItem struct {
+	RailId       *big.Int `json:"railId"`
+	IsTerminated bool     `json:"isTerminated"`
+	EndEpoch     *big.Int `json:"endEpoch"`
+}
+
 
 func NewPaymentsContract(address common.Address, client *ethclient.Client) (*PaymentsContract, error) {
 	parsedABI, err := abi.JSON(strings.NewReader(PaymentsABIJSON))
@@ -354,44 +382,24 @@ func (p *PaymentsContract) GetRail(ctx context.Context, railId *big.Int) (*RailV
 		return nil, fmt.Errorf("getRail call failed: %w", err)
 	}
 
-	values, err := p.abi.Unpack("getRail", result)
-	if err != nil {
+	var raw getRailOutput
+	if err := abix.UnpackSingleTuple(p.abi, "getRail", result, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unpack getRail result: %w", err)
-	}
-	if len(values) != 1 {
-		return nil, fmt.Errorf("unexpected getRail result length: %d", len(values))
-	}
-	rawRail, ok := values[0].(struct {
-		Token               common.Address `json:"token"`
-		From                common.Address `json:"from"`
-		To                  common.Address `json:"to"`
-		Operator            common.Address `json:"operator"`
-		Validator           common.Address `json:"validator"`
-		PaymentRate         *big.Int       `json:"paymentRate"`
-		LockupPeriod        *big.Int       `json:"lockupPeriod"`
-		LockupFixed         *big.Int       `json:"lockupFixed"`
-		SettledUpTo         *big.Int       `json:"settledUpTo"`
-		EndEpoch            *big.Int       `json:"endEpoch"`
-		CommissionRateBps   *big.Int       `json:"commissionRateBps"`
-		ServiceFeeRecipient common.Address `json:"serviceFeeRecipient"`
-	})
-	if !ok {
-		return nil, fmt.Errorf("unexpected getRail tuple type: %T", values[0])
 	}
 
 	return &RailViewResult{
-		Token:               rawRail.Token,
-		From:                rawRail.From,
-		To:                  rawRail.To,
-		Operator:            rawRail.Operator,
-		Validator:           rawRail.Validator,
-		PaymentRate:         rawRail.PaymentRate,
-		LockupPeriod:        rawRail.LockupPeriod,
-		LockupFixed:         rawRail.LockupFixed,
-		SettledUpTo:         rawRail.SettledUpTo,
-		EndEpoch:            rawRail.EndEpoch,
-		CommissionRateBps:   rawRail.CommissionRateBps,
-		ServiceFeeRecipient: rawRail.ServiceFeeRecipient,
+		Token:               raw.Token,
+		From:                raw.From,
+		To:                  raw.To,
+		Operator:            raw.Operator,
+		Validator:           raw.Validator,
+		PaymentRate:         raw.PaymentRate,
+		LockupPeriod:        raw.LockupPeriod,
+		LockupFixed:         raw.LockupFixed,
+		SettledUpTo:         raw.SettledUpTo,
+		EndEpoch:            raw.EndEpoch,
+		CommissionRateBps:   raw.CommissionRateBps,
+		ServiceFeeRecipient: raw.ServiceFeeRecipient,
 	}, nil
 }
 
@@ -414,12 +422,20 @@ func (p *PaymentsContract) GetRailsForPayerAndToken(ctx context.Context, payer, 
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to unpack getRailsForPayerAndToken result: %w", err)
 	}
+	if len(values) != 3 {
+		return nil, nil, nil, fmt.Errorf("unexpected getRailsForPayerAndToken result length: %d", len(values))
+	}
 
-	rawResults := values[0].([]struct {
-		RailId       *big.Int `json:"railId"`
-		IsTerminated bool     `json:"isTerminated"`
-		EndEpoch     *big.Int `json:"endEpoch"`
-	})
+	// values[0] is a tuple[]: json round-trip the whole slice instead of
+	// asserting against the anonymous []struct{...} go-ethereum builds.
+	buf, err := json.Marshal(values[0])
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("getRailsForPayerAndToken: marshal results: %w", err)
+	}
+	var rawResults []getRailsForPayerAndTokenItem
+	if err := json.Unmarshal(buf, &rawResults); err != nil {
+		return nil, nil, nil, fmt.Errorf("getRailsForPayerAndToken: decode results: %w", err)
+	}
 
 	results := make([]RailInfoResult, len(rawResults))
 	for i, r := range rawResults {
@@ -430,7 +446,15 @@ func (p *PaymentsContract) GetRailsForPayerAndToken(ctx context.Context, payer, 
 		}
 	}
 
-	return results, values[1].(*big.Int), values[2].(*big.Int), nil
+	nextOffset, ok := values[1].(*big.Int)
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("unexpected nextOffset type: %T", values[1])
+	}
+	total, ok := values[2].(*big.Int)
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("unexpected total type: %T", values[2])
+	}
+	return results, nextOffset, total, nil
 }
 
 

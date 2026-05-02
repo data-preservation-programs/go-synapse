@@ -2,12 +2,12 @@ package spregistry
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
 	"sync"
 
+	"github.com/data-preservation-programs/go-synapse/pkg/abix"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -351,7 +351,7 @@ func (c *Contract) GetProvider(ctx context.Context, providerID *big.Int) (*GetPr
 	}
 
 	var res getProviderByAddressOutput
-	if err := unpackSingleTuple(c.abi, "getProvider", result, &res); err != nil {
+	if err := abix.UnpackSingleTuple(c.abi, "getProvider", result, &res); err != nil {
 		return nil, fmt.Errorf("failed to unpack getProvider result: %w", err)
 	}
 
@@ -382,7 +382,7 @@ func (c *Contract) GetProviderByAddress(ctx context.Context, addr common.Address
 	}
 
 	var res getProviderByAddressOutput
-	if err := unpackSingleTuple(c.abi, "getProviderByAddress", result, &res); err != nil {
+	if err := abix.UnpackSingleTuple(c.abi, "getProviderByAddress", result, &res); err != nil {
 		return nil, fmt.Errorf("failed to unpack getProviderByAddress result: %w", err)
 	}
 
@@ -400,7 +400,7 @@ func (c *Contract) GetProviderByAddress(ctx context.Context, addr common.Address
 
 // getProviderByAddressOutput mirrors the (providerId, info) tuple
 // getProviderByAddress returns. Tagged for json round-trip via
-// unpackSingleTuple below.
+// abix.UnpackSingleTuple.
 type getProviderByAddressOutput struct {
 	ProviderID *big.Int                       `json:"providerId"`
 	Info       getProviderByAddressOutputInfo `json:"info"`
@@ -412,28 +412,6 @@ type getProviderByAddressOutputInfo struct {
 	Name            string         `json:"name"`
 	Description     string         `json:"description"`
 	IsActive        bool           `json:"isActive"`
-}
-
-// unpackSingleTuple decodes an ABI method's single-tuple return into dst
-// via abi.Unpack + json round-trip. UnpackIntoInterface mishandles this
-// shape; Unpack returns the right anonymous struct, json copies it into
-// dst by matching json tags. dst must be a pointer to a tagged struct.
-func unpackSingleTuple(parsed abi.ABI, method string, payload []byte, dst any) error {
-	out, err := parsed.Unpack(method, payload)
-	if err != nil {
-		return err
-	}
-	if len(out) != 1 {
-		return fmt.Errorf("%s: expected 1 output, got %d", method, len(out))
-	}
-	buf, err := json.Marshal(out[0])
-	if err != nil {
-		return fmt.Errorf("%s: marshal unpacked tuple: %w", method, err)
-	}
-	if err := json.Unmarshal(buf, dst); err != nil {
-		return fmt.Errorf("%s: decode into %T: %w", method, dst, err)
-	}
-	return nil
 }
 
 func (c *Contract) GetProviderIDByAddress(ctx context.Context, addr common.Address) (*big.Int, error) {
@@ -484,7 +462,7 @@ func (c *Contract) GetProviderWithProduct(ctx context.Context, providerID *big.I
 	}
 
 	var res getProviderWithProductOutput
-	if err := unpackSingleTuple(c.abi, "getProviderWithProduct", result, &res); err != nil {
+	if err := abix.UnpackSingleTuple(c.abi, "getProviderWithProduct", result, &res); err != nil {
 		return nil, fmt.Errorf("failed to unpack getProviderWithProduct result: %w", err)
 	}
 
@@ -509,7 +487,7 @@ func (c *Contract) GetProviderWithProduct(ctx context.Context, providerID *big.I
 // getProviderWithProductOutput mirrors the (providerId, providerInfo,
 // product, productCapabilityValues) tuple getProviderWithProduct
 // returns. Same json-tagged shape pattern as getProviderByAddressOutput
-// for unpackSingleTuple.
+// for abix.UnpackSingleTuple.
 type getProviderWithProductOutput struct {
 	ProviderID              *big.Int                            `json:"providerId"`
 	ProviderInfo            getProviderByAddressOutputInfo      `json:"providerInfo"`
