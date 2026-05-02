@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/data-preservation-programs/go-synapse/constants"
 	"github.com/data-preservation-programs/go-synapse/contracts"
@@ -19,6 +20,8 @@ import (
 // SybilFee is the 0.1 FIL creation fee required by the PDP contract's
 // createDataSet. defined in Fees.sol as SYBIL_FEE.
 var SybilFee = big.NewInt(100000000000000000) // 0.1 FIL in attoFIL
+
+const defaultReceiptTimeout = 90 * time.Second
 
 // ProofSetManager provides high-level operations for managing PDP proof sets
 type ProofSetManager interface {
@@ -229,7 +232,7 @@ func (m *Manager) CreateProofSet(ctx context.Context, opts CreateProofSetOptions
 	// Mark as sent only after successful contract call
 	txSent = true
 
-	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
+	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), defaultReceiptTimeout)
 	if err != nil {
 		// Error waiting for receipt - transaction may be pending, don't release nonce
 		return nil, fmt.Errorf("failed to wait for receipt: %w", err)
@@ -355,7 +358,7 @@ func (m *Manager) AddRoots(ctx context.Context, proofSetID *big.Int, roots []Roo
 	// Mark as sent only after successful contract call
 	txSent = true
 
-	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
+	receipt, err := txutil.WaitForReceipt(ctx, m.client, tx.Hash(), defaultReceiptTimeout)
 	if err != nil {
 		// Error waiting for receipt - transaction may be pending, don't release nonce
 		return nil, fmt.Errorf("failed to wait for receipt: %w", err)
@@ -436,7 +439,7 @@ func (m *Manager) DeleteProofSet(ctx context.Context, proofSetID *big.Int, extra
 	// Mark as sent only after successful contract call
 	txSent = true
 
-	_, err = txutil.WaitForReceipt(ctx, m.client, tx.Hash(), txutil.DefaultRetryConfig().MaxBackoff*3)
+	_, err = txutil.WaitForReceipt(ctx, m.client, tx.Hash(), defaultReceiptTimeout)
 	if err != nil {
 		// Error waiting for receipt - transaction may be pending, don't release nonce
 		return fmt.Errorf("failed to wait for receipt: %w", err)
