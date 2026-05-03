@@ -439,11 +439,10 @@ func (p *PaymentsContract) GetRailsForPayerAndToken(ctx context.Context, payer, 
 
 	results := make([]RailInfoResult, len(rawResults))
 	for i, r := range rawResults {
-		results[i] = RailInfoResult{
-			RailId:       r.RailId,
-			IsTerminated: r.IsTerminated,
-			EndEpoch:     r.EndEpoch,
-		}
+		// getRailsForPayerAndTokenItem and RailInfoResult have identical
+		// field names + types; struct tags don't affect Go's conversion
+		// identity, so a direct conversion suffices. (gosimple S1016)
+		results[i] = RailInfoResult(r)
 	}
 
 	nextOffset, ok := values[1].(*big.Int)
