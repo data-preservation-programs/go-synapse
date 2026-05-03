@@ -423,11 +423,10 @@ func (p *PaymentsContract) GetRailsForPayerAndToken(ctx context.Context, payer, 
 
 	results := make([]RailInfoResult, len(rawResults))
 	for i, r := range rawResults {
-		results[i] = RailInfoResult{
-			RailId:       r.RailId,
-			IsTerminated: r.IsTerminated,
-			EndEpoch:     r.EndEpoch,
-		}
+		// abi.Unpack produces an anonymous struct whose fields and types
+		// match RailInfoResult exactly; struct tags don't affect Go's
+		// conversion identity. (gosimple S1016)
+		results[i] = RailInfoResult(r)
 	}
 
 	return results, values[1].(*big.Int), values[2].(*big.Int), nil
